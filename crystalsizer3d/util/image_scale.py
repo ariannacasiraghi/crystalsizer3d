@@ -71,7 +71,7 @@ def get_pixels_to_mm_scale_factor(
     im = Image.open(image_path)
     width, height = im.size
     zoom = orthographic_scale_factor(scene)
-    dist_to_mm = zoom * pixel_to_mm * min(width, height)
+    dist_to_mm = zoom * pixel_to_mm * min(width, height) / 2
 
     return dist_to_mm
 

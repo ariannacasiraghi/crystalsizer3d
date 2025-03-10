@@ -2,7 +2,7 @@ import json
 import os
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import matplotlib.lines as mlines
@@ -58,7 +58,7 @@ def get_args() -> Namespace:
     parser.add_argument('--interval-mins', type=int, default=5,
                         help='Interval in minutes between frames.')
     parser.add_argument('--pixel-to-mm', type=float, default=None,
-                        help="Pixels to millimeters conversion factor. If not provided, it will be calculated dynamically.")
+                        help='Pixels to millimeters conversion factor. If not provided, it will be calculated dynamically.')
 
     args = parser.parse_args()
 
@@ -116,7 +116,7 @@ def _format_xtime(ax: plt.Axes, ts: List[float], add_xlabel: bool = True):
 
     ax.xaxis.set_major_locator(mticker.MultipleLocator(base=interval * 3600))  # Set major ticks every interval hours
 
-    ax.set_xlim([ts[0], ts[-1]])
+    # ax.set_xlim([ts[0], ts[-1]])
     if add_xlabel:
         ax.set_xlabel('Hours elapsed')
 
@@ -328,7 +328,7 @@ def plot_distances_and_areas(style: str = 'paper'):
 
     else:
         plt.rc('axes', titlesize=7, titlepad=4)  # fontsize of the title
-        plt.rc('axes', labelsize=8, labelpad=2)  # fontsize of the x and y labels
+        plt.rc('axes', labelsize=8, labelpad=3)  # fontsize of the x and y labels
         plt.rc('xtick', labelsize=7)  # fontsize of the x tick labels
         plt.rc('ytick', labelsize=7)  # fontsize of the y tick labels
         plt.rc('legend', fontsize=7)  # fontsize of the legend
@@ -344,10 +344,10 @@ def plot_distances_and_areas(style: str = 'paper'):
         n_rows = 6
         fig, axes = plt.subplots(
             n_rows, n_cols,
-            figsize=(5, 8),
+            figsize=(5.3, 7),
             gridspec_kw=dict(
-                top=0.97, bottom=0.05, right=0.99, left=0.08,
-                hspace=0.35, wspace=0.3
+                top=0.99, bottom=0.05, right=0.99, left=0.08,
+                hspace=0.45, wspace=0.3
             ),
         )
 
@@ -1003,13 +1003,92 @@ def plot_sequence_errors():
     plt.show()
 
 
+def calculate_measurement_errors(
+        scenes_dir: Path,
+        args: Namespace,
+        sf_args: SequenceFitterArgs,
+        measurements: Dict[str, np.ndarray],
+        output_dir: Path | None = None
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Calculate the measurement errors for the initial prediction.
+    """
+    measurement_idxs = measurements['idx']
+    image_paths = get_image_paths(sf_args, load_all=True)
+    image_paths = [p[1] for p in image_paths if p[0] in measurement_idxs]
+    dist_to_mm = get_pixels_to_mm_scale_factor(sf_args.initial_scene, image_paths[0], args.pixel_to_mm)
+
+    # Calculate zoom factor using initial scene
+    scene0 = Scene.from_yml(sf_args.initial_scene)
+    zoom = orthographic_scale_factor(scene0)
+
+    # Clone the base crystal
+    crystal = scene0.crystal.clone()
+    crystal.to('cpu')
+
+    # Set up loss outputs
+    errors_d = np.zeros(len(measurement_idxs))
+    errors_v = np.zeros(len(measurement_idxs))
+
+    # Calculate errors
+    for i, idx in enumerate(measurement_idxs):
+        # Build the manually measured crystal
+        crystal.build_mesh(
+            scale=init_tensor(measurements['scale'][i]),
+            distances=init_tensor(measurements['distances'][i]),
+            origin=init_tensor(measurements['origin'][i]),
+            rotation=init_tensor(measurements['rotation'][i]),
+        )
+        v_target = crystal.vertices.clone().detach()
+
+        if output_dir:
+            img_target = annotate_image(
+                image_paths[i],
+                crystal=crystal,
+                zoom=zoom
+            )
+            img_target.save(output_dir / f'annotated_{idx:04d}_target.png')
+
+        # Load the scene crystal
+        with open(scenes_dir / f'{idx:04d}.yml', 'r') as f:
+            c_params = yaml.load(f, Loader=yaml.FullLoader)['crystal']
+        crystal.build_mesh(
+            scale=init_tensor(c_params['scale']),
+            distances=init_tensor(c_params['distances']),
+            origin=init_tensor(c_params['origin']),
+            rotation=init_tensor(c_params['rotation']),
+        )
+        v_pred = crystal.vertices.clone().detach()
+
+        if output_dir:
+            img_target = annotate_image(
+                image_paths[i],
+                crystal=crystal,
+                zoom=zoom
+            )
+            img_target.save(output_dir / f'annotated_{idx:04d}_pred.png')
+
+        # Calculate the distance errors
+        d_pred = np.array(c_params['distances']) * c_params['scale']
+        d_target = measurements['distances'][i] * measurements['scale'][i]
+        errors_d[i] = np.abs(d_pred - d_target).mean() * dist_to_mm
+
+        # Calculate the 3D errors
+        dists = torch.cdist(v_pred, v_target)
+        dists_min_ab = dists.amin(dim=0)
+        dists_min_ba = dists.amin(dim=1)
+        errors_v[i] = torch.cat([dists_min_ab, dists_min_ba]).mean().item() * dist_to_mm
+
+    return errors_d, errors_v
+
+
 def plot_sequence_errors_comparison():
     """
     Plot two sets of sequence errors for comparison.
     """
     args, output_dir = _init()
     assert args.sf_path2.exists(), f'A second sequence fitter path must be provided.'
-    N = 20
+    save_annotations = True
 
     # Load the args
     with open(args.sf_path / 'args_sequence_fitter.yml', 'r') as f:
@@ -1032,36 +1111,42 @@ def plot_sequence_errors_comparison():
         save_dir=output_dir
     )
 
-    # Load the initial prediction losses
-    base_path = SEQUENCE_DATA_PATH / f'{sf_args.images_dir.stem}_{hash_data(sf_args.images_dir.absolute())}'
-    pred_args = {k: getattr(ref_args, k) for k in PREDICTOR_ARG_NAMES if k in ref_args_dict}
-    if ref_args.initial_pred_batch_size == 1:
-        pred_hash = hash_data({k: getattr(ref_args, k) for k in PREDICTOR_ARG_NAMES_BS1})
-    else:
-        pred_hash = hash_data(pred_args)
-    model_id = pred_args['predictor_model_path'].stem[:4]
-    pred_cache_dir = base_path / 'predictor' / f'{model_id}_{pred_hash}'
-    losses_path = pred_cache_dir / f'losses_{hash_data(pred_args)}.json'
-    assert losses_path.exists(), f'Initial prediction losses file does not exist: {losses_path}'
-    with open(losses_path, 'r') as f:
-        losses_init = json_to_numpy(json.load(f))
-
-    # Load the refined losses from the sf_path -- keypoints only optimisation
-    with open(args.sf_path / 'losses.json', 'r') as f:
-        losses_kp = json_to_numpy(json.load(f))
-    losses_kp = losses_kp['eval']
-
-    # Load the refined losses from the sf_path2 -- with inverse rendering optimisation
-    with open(args.sf_path2 / 'losses.json', 'r') as f:
-        losses_ir = json_to_numpy(json.load(f))
-    losses_ir = losses_ir['eval']
-
     # Load measurements
     measurements = load_manual_measurements(
         measurements_dir=Path(runtime_args.measurements_dir),
         manager=manager
     )
     measurement_idxs = measurements['idx']
+
+    # Fetch the initial predictions
+    pred_args = {k: getattr(ref_args, k) for k in PREDICTOR_ARG_NAMES_BS1}
+    pred_model_id = pred_args['predictor_model_path'].stem[:4]
+    pred_cache_dir = args.sf_path.parent.parent / 'predictor' / f'{pred_model_id}_{hash_data(pred_args)}'
+    assert pred_cache_dir.exists(), f'Predictor cache directory does not exist: {pred_cache_dir}'
+
+    errors_d = {}
+    errors_v = {}
+
+    scenes_dirs = {
+        'initial': pred_cache_dir / 'scenes_initial',
+        'refined_kp': args.sf_path / 'scenes' / 'eval',
+        'refined_ir': args.sf_path2 / 'scenes' / 'eval',
+    }
+
+    for key, scenes_dir in scenes_dirs.items():
+        logger.info(f'Calculating errors for {key}.')
+        if save_annotations:
+            annotations_dir = output_dir / f'annotations_{key}'
+            annotations_dir.mkdir(exist_ok=True)
+        else:
+            annotations_dir = None
+        errors_d[key], errors_v[key] = calculate_measurement_errors(
+            scenes_dir=scenes_dir,
+            args=args,
+            sf_args=sf_args,
+            measurements=measurements,
+            output_dir=annotations_dir
+        )
 
     # Load the image paths and set up the x-values
     image_paths = get_image_paths(sf_args, load_all=True)
@@ -1072,7 +1157,7 @@ def plot_sequence_errors_comparison():
 
     # Plot the losses
     fig, axes = plt.subplots(
-        3, 1,
+        2, 1,
         figsize=(8, 5),
         sharex=True,
         gridspec_kw={'left': 0.1, 'right': 0.9, 'top': 0.9, 'bottom': 0.1}
@@ -1082,39 +1167,19 @@ def plot_sequence_errors_comparison():
     c_keypoints = '#006400'
     c_refined = '#6a35b5'
 
-    # Measurement errors
-    lm_init = losses_init['measurement'][m_idxs]
-    lm_refined_kp = losses_kp['measurement'][m_idxs]
-    lm_refined_ir = losses_ir['measurement'][m_idxs]
-    ax = axes[0]
-    # ax.set_title('Measurement Errors')
-    ax.plot(m_ts, lm_init, c=c_init, label='Initial', marker='o', linestyle=':', markerfacecolor='none')
-    ax.plot(m_ts, lm_refined_kp, c=c_keypoints, label='Refined - KP', marker='o', linestyle=':', markerfacecolor='none')
-    ax.plot(m_ts, lm_refined_ir, c=c_refined, label='Refined - KP+IR', marker='o', linestyle=':',
-            markerfacecolor='none')
-    ax.set_ylabel('Measurement Error')
-    ax.set_yscale('log')
-    # _format_xtime(ax, ts)
-
-    # L2 errors
-    ax = axes[1]
-    # ax.set_title('L2 Errors')
-    ax.plot(ts, losses_init['l2'], c=c_init, label='Initial')
-    # ax.plot(ts, losses_kp['l2'], c=c_refined, label='Refined - KP')
-    ax.plot(ts, losses_ir['l2'], c=c_refined, label='Refined - KP+IR')
-    ax.set_ylabel('L2 Error')
-    ax.set_yscale('log')
-    # _format_xtime(ax, ts)
-
-    # Keypoint errors
-    ax = axes[2]
-    # ax.set_title('Keypoint Errors')
-    ax.plot(ts, losses_init['keypoints'], c=c_init, label='Initial')
-    ax.plot(ts, losses_kp['keypoints'], c=c_keypoints, label='Refined - KP')
-    ax.plot(ts, losses_ir['keypoints'], c=c_refined, label='Refined - KP+IR')
-    ax.set_ylabel('Keypoint Error')
-    ax.set_yscale('log')
-    _format_xtime(ax, ts, add_xlabel=True)
+    for i, errors in enumerate([errors_d, errors_v]):
+        ax = axes[i]
+        ax.plot(m_ts, errors['initial'], c=c_init, label='Initial', marker='o', linestyle=':',
+                markerfacecolor='none')
+        ax.plot(m_ts, errors['refined_kp'], c=c_keypoints, label='Refined - KP', marker='o', linestyle=':',
+                markerfacecolor='none')
+        ax.plot(m_ts, errors['refined_ir'], c=c_refined, label='Refined - KP+IR', marker='o', linestyle=':',
+                markerfacecolor='none')
+        ax.set_ylabel('Measurement Error ' + ('(d)' if i == 0 else '(v)'))
+        ax.set_yscale('log')
+        _format_xtime(ax, ts)
+        if i == 0:
+            ax.legend()
 
     plt.savefig(output_dir / 'sequence_errors.svg')
     plt.show()
@@ -1126,6 +1191,7 @@ def plot_sequence_errors_summary():
     """
     args, output_dir = _init()
     assert args.sf_path2.exists(), f'A second sequence fitter path must be provided.'
+    save_annotations = False
 
     # Load the args
     with open(args.sf_path / 'args_sequence_fitter.yml', 'r') as f:
@@ -1148,47 +1214,44 @@ def plot_sequence_errors_summary():
         save_dir=output_dir
     )
 
-    # Load the initial prediction losses
-    base_path = SEQUENCE_DATA_PATH / f'{sf_args.images_dir.stem}_{hash_data(sf_args.images_dir.absolute())}'
-    pred_args = {k: getattr(ref_args, k) for k in PREDICTOR_ARG_NAMES if k in ref_args_dict}
-    if ref_args.initial_pred_batch_size == 1:
-        pred_hash = hash_data({k: getattr(ref_args, k) for k in PREDICTOR_ARG_NAMES_BS1})
-    else:
-        pred_hash = hash_data(pred_args)
-    model_id = pred_args['predictor_model_path'].stem[:4]
-    pred_cache_dir = base_path / 'predictor' / f'{model_id}_{pred_hash}'
-    losses_path = pred_cache_dir / f'losses_{hash_data(pred_args)}.json'
-    assert losses_path.exists(), f'Initial prediction losses file does not exist: {losses_path}'
-    with open(losses_path, 'r') as f:
-        losses_init = json_to_numpy(json.load(f))
-
-    # Load the refined losses from the sf_path -- keypoints only optimisation
-    with open(args.sf_path / 'losses.json', 'r') as f:
-        losses_kp = json_to_numpy(json.load(f))
-    losses_kp = losses_kp['eval']
-
-    # Load the refined losses from the sf_path2 -- with inverse rendering optimisation
-    with open(args.sf_path2 / 'losses.json', 'r') as f:
-        losses_ir = json_to_numpy(json.load(f))
-    losses_ir = losses_ir['eval']
-
     # Load measurements
     measurements = load_manual_measurements(
         measurements_dir=Path(runtime_args.measurements_dir),
         manager=manager
     )
-    measurement_idxs = measurements['idx']
 
-    # Load the image paths and set up the x-values
-    image_paths = get_image_paths(sf_args, load_all=True)
-    x_vals = [idx for idx, _ in image_paths]
-    m_idxs = np.concatenate([(x_vals == m_idx).nonzero()[0] for m_idx in measurement_idxs])
+    # Fetch the initial predictions
+    pred_args = {k: getattr(ref_args, k) for k in PREDICTOR_ARG_NAMES_BS1}
+    pred_model_id = pred_args['predictor_model_path'].stem[:4]
+    pred_cache_dir = args.sf_path.parent.parent / 'predictor' / f'{pred_model_id}_{hash_data(pred_args)}'
+    assert pred_cache_dir.exists(), f'Predictor cache directory does not exist: {pred_cache_dir}'
 
-    # Measurement errors
-    lm_init = losses_init['measurement'][m_idxs]
-    lm_refined_kp = losses_kp['measurement'][m_idxs]
-    lm_refined_ir = losses_ir['measurement'][m_idxs]
-    data = np.stack([lm_init, lm_refined_kp, lm_refined_ir])
+    errors_d = {}
+    errors_v = {}
+
+    scenes_dirs = {
+        'initial': pred_cache_dir / 'scenes_initial',
+        'refined_kp': args.sf_path / 'scenes' / 'eval',
+        'refined_ir': args.sf_path2 / 'scenes' / 'eval',
+    }
+
+    for key, scenes_dir in scenes_dirs.items():
+        logger.info(f'Calculating errors for {key}.')
+        if save_annotations:
+            annotations_dir = output_dir / f'annotations_{key}'
+            annotations_dir.mkdir(exist_ok=True)
+        else:
+            annotations_dir = None
+        errors_d[key], errors_v[key] = calculate_measurement_errors(
+            scenes_dir=scenes_dir,
+            args=args,
+            sf_args=sf_args,
+            measurements=measurements,
+            output_dir=annotations_dir
+        )
+
+    # Measurement errors - use distance errors
+    data = np.stack([errors_d['initial'], errors_d['refined_kp'], errors_d['refined_ir']])
 
     # Calculate the mean and std of the relative error changes and save to csv
     headers = ['stage', 'mean', 'std']
@@ -1253,21 +1316,20 @@ def plot_test_cube():
     im = Image.open(image_paths[-1][1])
     width, height = im.size
     zoom = orthographic_scale_factor(scene)
-    dist_to_mm = zoom * args.pixel_to_mm * min(width, height)
+    dist_to_mm = zoom / 2 * args.pixel_to_mm * min(width, height)
     # Get a crystal object
     TEST_CUBE = {
         'lattice_unit_cell': [1, 1, 1],
         'lattice_angles': [np.pi / 2, np.pi / 2, np.pi / 2],
         'miller_indices': [(1, 0, 0), (0, 1, 0), (0, 0, 1)],
         'point_group_symbol': '222',
-        'scale': 1,
         'origin': [0, 0, 0],
-        'distances': [1. / dist_to_mm, 1. / dist_to_mm, 1. / dist_to_mm],
+        'distances': [0.5 / dist_to_mm, 0.5 / dist_to_mm, 0.5 / dist_to_mm],
         'rotation': [0., 0., 0.],
         'material_ior': 1.2,
         'material_roughness': 0.01
     }
-    cube = Crystal(**TEST_CUBE['cube'])
+    cube = Crystal(**TEST_CUBE)
 
     img = annotate_image(image_paths[-1][1],
                          crystal=cube,
