@@ -748,7 +748,7 @@ def plot_volume_and_supersaturation():
 
     # Variables
     initial_concentration = 16
-    crystal_density = 1.47
+    crystal_density = 1.54
     cuvette_volume = 0.5
     solubility = 7.36
 
@@ -765,7 +765,7 @@ def plot_volume_and_supersaturation():
         sf_path=args.sf_path,
         pixel_to_mm=args.pixel_to_mm,
         cache_only=False,
-        regenerate=False
+        regenerate=True
     )
     volumes_m = generate_or_load_manual_measurement_volumes(
         sf_args=sf_args,
@@ -773,7 +773,7 @@ def plot_volume_and_supersaturation():
         predictor_model_path=ref_args.predictor_model_path,
         pixel_to_mm=args.pixel_to_mm,
         cache_only=False,
-        regenerate=False
+        regenerate=True
     )
 
     # Calculate the concentrations
@@ -789,8 +789,8 @@ def plot_volume_and_supersaturation():
                                - (volumes_m[i] - volumes_m[i - 1]) * crystal_density / cuvette_volume)
 
     # Calculate the supersaturation
-    supersaturation = concentrations / solubility
-    supersaturation_m = concentrations_m / solubility
+    supersaturation = (concentrations - solubility) / solubility
+    supersaturation_m = (concentrations_m - solubility) / solubility
 
     # Instantiate a manager
     manager = Manager.load(
@@ -1345,11 +1345,11 @@ if __name__ == '__main__':
     # plot_sequence_errors_for_sampler()
     # plot_crystal_images_with_wireframes()
     # plot_3d_crystals()
-    plot_distances_and_areas(style='supplementary')
+    # plot_distances_and_areas(style='supplementary')
     # plot_3d_crystals_with_highlighted_faces()
     # plot_volume()
     # plot_concentration()
-    # plot_volume_and_supersaturation()
+    plot_volume_and_supersaturation()
     # create_legend_plot()
     # plot_sequence_errors()
     # plot_sequence_errors_comparison()
