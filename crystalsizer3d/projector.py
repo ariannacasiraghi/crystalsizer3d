@@ -353,27 +353,16 @@ class Projector:
 
         # Calculate the refraction angles and work out where it refracts on the plane
         cos_theta_t = torch.sqrt(torch.clamp(1 - sin2_theta_t, min=1e-3))
-        theta_t = torch.arccos(cos_theta_t)
-        theta_inc = torch.arccos(cos_theta_inc)
 
-        # Calculate magnitude of translation in xy direction
-        # S is the right angle triangle between inc and T, S dot inc = 0
-        s_mag = d[:, None] * torch.sin(theta_inc - theta_t) / torch.cos(theta_t)
+        # Calculate unit vector T in the direction of refracted vertex (from ref)
+        T = -eta * incident + (eta * cos_theta_inc - cos_theta_t) * normal
 
-        # Calculate unit vector translation in direction perpendicular to inc
-        T = eta * incident + (eta * cos_theta_inc - cos_theta_t) * normal
-        T = T / T.norm()
-
-        # Calculate how far T travels in incident direction
-        T_in_inc = T * incident
-        S = -T / T_in_inc.norm() + incident
-        S_norm = S.norm()
+        # Scale by distance along T from surface to vertex
+        T = d[:, None] @ (T / cos_theta_t)[None, :]
 
         # Adjust the points
-        if S_norm > 0:
-            S = S / S_norm
-            shift = s_mag * S
-            points = points + shift
+        shift = (T @ incident)[:, None] * incident[None, :] - T
+        points = points + shift
 
         return points
 
