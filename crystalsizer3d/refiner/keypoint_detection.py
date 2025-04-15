@@ -203,6 +203,7 @@ def find_keypoints(
         X_target: Tensor,
         X_target_denoised: Tensor,
         manager: Manager,
+        initial_target: str = 'original',
         oversize_input: bool = True,
         max_img_size: int = 512,
         batch_size: int = 512,
@@ -222,6 +223,8 @@ def find_keypoints(
     """
     Find the keypoints using a targeted approach.
     """
+    assert initial_target in ['original', 'denoised'], \
+        'initial_target must be either "original" or "denoised".'
     X_target = X_target.cpu()
     X_target_denoised = X_target_denoised.cpu()
     heatmap_args = dict(
@@ -265,9 +268,10 @@ def find_keypoints(
     assert X_target.shape == X_target_denoised.shape, 'Input images must have the same shape.'
     image_size = X_target.shape[-1]
 
-    # First we detect keypoints on the full size original
-    quiet_log('Detecting keypoints in the original image.')
-    X_lr_kp = calculate_keypoint_heatmaps(X=X_target, **heatmap_args)
+    # First we detect keypoints on the full size original or denoised image
+    quiet_log(f'Detecting keypoints in the {initial_target} image.')
+    X_initial = X_target if initial_target == 'original' else X_target_denoised
+    X_lr_kp = calculate_keypoint_heatmaps(X=X_initial, **heatmap_args)
     zero_border(X_lr_kp)
     Y_lr = get_keypoint_coordinates(X_lr_kp, **coords_args)
 

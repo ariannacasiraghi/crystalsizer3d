@@ -140,6 +140,7 @@ def make_3d_digital_crystal_image(
         v, f = to_numpy(v), to_numpy(f)
         mlab.triangular_mesh(*v.T, f, figure=fig, color=to_rgb(surface_colour_), opacity=opacity)
         tube_radius = max(0.0001, crystal_.distances[0].item() * wireframe_radius_factor)
+        # tube_radius = 0.025
         for fv_idxs in crystal_.faces.values():
             fv = to_numpy(crystal_.vertices[fv_idxs])
             fv = np.vstack([fv, fv[0]])  # Close the loop
