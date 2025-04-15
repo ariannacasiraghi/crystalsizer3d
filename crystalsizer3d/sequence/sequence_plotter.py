@@ -299,7 +299,9 @@ class SequencePlotter:
             fig = plot_material_properties(**job)
         elif job['plot_type'] == 'light':
             fig = plot_light_radiance(**job)
-        elif job['plot_type'] == 'conj_switch_probs' and 'conjugate_switch_probs' in job['parameters']:
+        elif job['plot_type'] == 'conj_switch_probs':
+            if 'conjugate_switch_probs' not in job['parameters']:
+                return
             fig = plot_conj_switch_probs(**job)
         else:
             raise ValueError(f'Invalid plot type: {job["plot_type"]}')
