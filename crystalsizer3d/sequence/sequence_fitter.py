@@ -46,7 +46,8 @@ from crystalsizer3d.util.utils import FlexibleJSONEncoder, calculate_model_norm,
 # Suppress mitsuba warning messages
 mi.set_log_level(mi.LogLevel.Error)
 
-PARAMETER_KEYS = ['scale', 'distances', 'origin', 'rotation', 'material_roughness', 'material_ior', 'light_radiance']
+PARAMETER_KEYS = ['scale', 'distances', 'origin', 'rotation', 'material_roughness', 'material_ior', 'light_radiance',
+                  'conj_switch_probs']
 SEQUENCE_DATA_PATH = DATA_PATH / 'sequences'
 
 ARG_NAMES = {
@@ -757,16 +758,21 @@ class SequenceFitter:
         )
 
         # Load the initial scenes and parameters into the 'eval' space
+        keys = PARAMETER_KEYS.copy()
+        if not self.refiner_args.use_conj_switching:
+            keys.remove('conj_switch_probs')
         scenes = []
         parameters = {}
         for i, scene_initial_path in enumerate(self.scenes_initial):
             with open(scene_initial_path) as f:
                 scene_dict = yaml.load(f, Loader=yaml.FullLoader)
+            if self.refiner_args.use_conj_switching:
+                scene_dict['conj_switch_probs'] = self.refiner.conj_switch_probs.tolist()
             scenes.append({
                 'path': scene_initial_path,
                 'scene_dict': scene_dict,
             })
-            for k in PARAMETER_KEYS:
+            for k in keys:
                 if k not in parameters:
                     parameters[k] = []
                 if k in scene_dict:
@@ -840,12 +846,17 @@ class SequenceFitter:
         self.initial_scene.integrator_rr_depth = self.refiner_args.integrator_rr_depth
         self.initial_scene.build_mi_scene()
 
+        # Adjust the crystal origin so that the mesh is above z=0
+        crystal = self.initial_scene.crystal
+        if crystal.vertices[:, 2].min() < 0:
+            crystal.origin.data[2] -= crystal.vertices[:, 2].min()
+
         # Set the fixed parameters
         for k in self.sf_args.fix_parameters:
             if k == 'light_radiance':
                 v = self.initial_scene.light_radiance
             else:
-                v = getattr(self.initial_scene.crystal, k)
+                v = getattr(crystal, k)
             self.fixed_parameters[k] = init_tensor(v)
 
     def _init_scenes(self):
@@ -892,6 +903,8 @@ class SequenceFitter:
                 logger.info(f'Initialising scene {i + 1}/{len(self)}.')
             with open(scene_initial_path) as f:
                 scene_initial_dict = yaml.load(f, Loader=yaml.FullLoader)
+            if self.refiner_args.use_conj_switching:
+                scene_initial_dict['conj_switch_probs'] = self.refiner.conj_switch_probs.tolist()
             c_dict = scene_initial_dict['crystal']
 
             # Fix the parameters if required
@@ -899,6 +912,7 @@ class SequenceFitter:
                 if k == 'origin':
                     crystal.distances.data = init_tensor(c_dict['distances'])
                     crystal.origin.data = init_tensor(c_dict['origin'])
+                    crystal.build_mesh()
                     crystal.adjust_origin(origin_new, verify=False)
                     c_dict['distances'] = crystal.distances.tolist()
                     c_dict['origin'] = crystal.origin.tolist()
@@ -936,17 +950,22 @@ class SequenceFitter:
 
         # Initialise the parameters from the scenes
         logger.info(f'Initialising parameters at {parameters_path}.')
+        keys = PARAMETER_KEYS.copy()
+        if not self.refiner_args.use_conj_switching:
+            keys.remove('conj_switch_probs')
         parameters = {'train': {}, 'eval': {}}
         for train_or_eval in ['train', 'eval']:
             for scene in self.scenes[train_or_eval]:
                 scene_dict = scene['scene_dict']
-                for k in PARAMETER_KEYS:
+                for k in keys:
                     if k not in parameters[train_or_eval]:
                         parameters[train_or_eval][k] = []
                     if k in scene_dict:
                         v = scene_dict[k]
                     elif k in scene_dict['crystal']:
                         v = scene_dict['crystal'][k]
+                    elif k == 'conj_switch_probs' and not self.refiner_args.use_conj_switching:
+                        continue
                     else:
                         raise RuntimeError(f'Parameter {k} not found in scene or crystal.')
                     parameters[train_or_eval][k].append(v)
@@ -1102,9 +1121,10 @@ class SequenceFitter:
         Instantiate the sequence encoder, optimiser and learning rate scheduler.
         """
         sa = self.sf_args
+        scene_dict = self.scenes['train'][0]['scene_dict'].copy()
         if sa.seq_encoder_model == 'transformer':
             self.sequence_encoder = SequenceEncoder(
-                scene_dict=self.scenes['train'][0]['scene_dict'],
+                scene_dict=scene_dict,
                 fixed_parameters=self.fixed_parameters,
                 stationary_parameters=sa.stationary_parameters,
                 hidden_dim=sa.hidden_dim,
@@ -1115,7 +1135,7 @@ class SequenceFitter:
             )
         elif sa.seq_encoder_model == 'ffn':
             self.sequence_encoder = SequenceEncoderFFN(
-                scene_dict=self.scenes['train'][0]['scene_dict'],
+                scene_dict=scene_dict,
                 fixed_parameters=self.fixed_parameters,
                 stationary_parameters=sa.stationary_parameters,
                 hidden_dim=sa.hidden_dim,
@@ -1666,10 +1686,13 @@ class SequenceFitter:
         scene = Scene.from_yml(self.scenes[train_or_eval][0]['path'])
         crystal = scene.crystal
         crystal.to('cpu')
+        keys = PARAMETER_KEYS.copy()
+        if not self.refiner_args.use_conj_switching:
+            keys.remove('conj_switch_probs')
         for i in range(len(self)):
             if (i + 1) % 50 == 0:
                 logger.info(f'Generating image {i + 1}/{len(self)}.')
-            for k in PARAMETER_KEYS:
+            for k in keys:
                 v = init_tensor(self.parameters[train_or_eval][k][i])
                 if k == 'light_radiance':
                     scene.light_radiance.data = v.to(scene.device)
@@ -1729,7 +1752,7 @@ class SequenceFitter:
                 [scene_dict['crystal']['material_roughness'], ],
                 [scene_dict['crystal']['material_ior'], ],
                 scene_dict['light_radiance'],
-            ]
+            ] + ([scene_dict['conj_switch_probs'],] if self.refiner_args.use_conj_switching else [])
         ])
 
         return params
@@ -1760,6 +1783,8 @@ class SequenceFitter:
                 val = val.clamp(1, 3)
             elif k == 'light_radiance':
                 val = val.clamp(0, 10)
+            elif k == 'conj_switch_probs':
+                val = val.clamp(0, 1)
             parameters[k] = val
             idx += n
         return parameters
@@ -1774,11 +1799,15 @@ class SequenceFitter:
             with open(self.path / f'{name}.json', 'w') as f:
                 json.dump(data, f, cls=FlexibleJSONEncoder)
 
+        keys = PARAMETER_KEYS.copy()
+        if not self.refiner_args.use_conj_switching:
+            keys.remove('conj_switch_probs')
+
         # Update the scene files with the parameters
         for train_or_eval in ['train', 'eval']:
             for i, scene in enumerate(self.scenes[train_or_eval]):
                 scene_dict = scene['scene_dict']
-                for k in PARAMETER_KEYS:
+                for k in keys:
                     v = self.parameters[train_or_eval][k][i].tolist()
                     if k in scene_dict:
                         scene_dict[k] = v

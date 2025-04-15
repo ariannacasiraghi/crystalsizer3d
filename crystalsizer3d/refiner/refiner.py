@@ -643,7 +643,10 @@ class Refiner:
         """
         Initialise the conjugate switching probabilities.
         """
-        miller_idxs = self.crystal.all_miller_indices
+        crystal = self.crystal
+        if crystal is None:
+            crystal = self.manager.crystal
+        miller_idxs = crystal.all_miller_indices
         pairs = []
         for i, mi1 in enumerate(miller_idxs):
             for j, mi2 in enumerate(miller_idxs):

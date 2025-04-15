@@ -43,7 +43,7 @@ def load_manual_measurements(
     mi_ref = manager.crystal.all_miller_indices
 
     # Expect measurements dir to contain files like XXXX.json
-    keys = ['idx', ] + [k for k in PARAMETER_KEYS if k != 'light_radiance']
+    keys = ['idx', ] + [k for k in PARAMETER_KEYS if k not in ['light_radiance', 'conj_switch_probs']]
     measurements = {k: [] for k in keys}
     for file_path in measurements_dir.iterdir():
         if file_path.suffix != '.json':

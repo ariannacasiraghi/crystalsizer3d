@@ -429,7 +429,7 @@ def plot_light_radiance(
         **kwargs
 ) -> Figure:
     """
-    Plot rotation.
+    Plot light radiance.
     """
     radiance = parameters['light_radiance']
     x_vals = [idx for idx, _ in image_paths]
@@ -444,6 +444,31 @@ def plot_light_radiance(
     fig.tight_layout()
     if save_dir is not None:
         plt.savefig(save_dir / f'light_radiance.{plot_extension}')
+    return fig
+
+
+def plot_conj_switch_probs(
+        parameters: Dict[str, np.ndarray],
+        image_paths: List[Tuple[int, Path]],
+        save_dir: Path = None,
+        **kwargs
+) -> Figure:
+    """
+    Plot conjugate switch probabilities.
+    """
+    probs = parameters['conj_switch_probs']
+    x_vals = [idx for idx, _ in image_paths]
+    fig, ax = plt.subplots(1, figsize=(12, 8))
+    ax.set_title('Conjugate switch probabilities')
+    ax.grid()
+    for i, prob in enumerate(probs.T):
+        ax.plot(x_vals, prob, label=f'Group {i}')
+    ax.set_xlabel('Image index')
+    ax.set_ylabel('Switch probability')
+    ax.legend()
+    fig.tight_layout()
+    if save_dir is not None:
+        plt.savefig(save_dir / f'conj_switch_probs.{plot_extension}')
     return fig
 
 

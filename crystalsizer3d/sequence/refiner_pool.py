@@ -64,6 +64,9 @@ def refiner_worker(
     from crystalsizer3d.sequence.sequence_fitter import PARAMETER_KEYS
     worker_id = os.getpid()
     logger.info(f'Refiner worker started (id={worker_id})')
+    keys = PARAMETER_KEYS.copy()
+    if not refiner_args.use_conj_switching:
+        keys.remove('conj_switch_probs')
 
     # Initialise the refiner
     refiner = Refiner(
@@ -87,11 +90,13 @@ def refiner_worker(
 
     # Work out the parameter shapes
     parameter_shapes = {}
-    for k in PARAMETER_KEYS:
+    for k in keys:
         if hasattr(scene, k):
             v = getattr(scene, k)
-        else:
+        elif hasattr(crystal, k):
             v = getattr(crystal, k)
+        else:
+            v = getattr(refiner, k)
         parameter_shapes[k] = v.numel()
 
     def _parameters_to_buffers():
@@ -104,7 +109,7 @@ def refiner_worker(
 
     def _buffers_to_parameters():
         if len(crystal._parameters) == 0:
-            for k in PARAMETER_KEYS:
+            for k in keys:
                 val = crystal.get_buffer(k)
                 del crystal._buffers[k]
                 crystal.register_parameter(k, nn.Parameter(val, requires_grad=True))
@@ -138,6 +143,8 @@ def refiner_worker(
                 val = val.clamp(1, 3)
             elif k == 'light_radiance':
                 val = val.clamp(0, 10)
+            elif k == 'conj_switch_probs':
+                val = val.clamp(refiner_args.conj_switch_prob_min, refiner_args.conj_switch_prob_max)
             parameters[k] = val
             idx += n
         return parameters
@@ -195,6 +202,8 @@ def refiner_worker(
         for k, v in p_dict.items():
             if k == 'light_radiance':
                 refiner.scene.light_radiance = v.to(refiner.device)
+            elif k == 'conj_switch_probs':
+                refiner.conj_switch_probs = v.to(refiner.device)
             else:
                 setattr(refiner.scene.crystal, k, v.to('cpu'))
 
@@ -218,6 +227,8 @@ def refiner_worker(
         for k, v in p_dict_init.items():
             if k == 'light_radiance':
                 refiner.scene.light_radiance.data = v.to(refiner.device)
+            elif k == 'conj_switch_probs':
+                refiner.conj_switch_probs.data = v.to(refiner.device)
             else:
                 getattr(refiner.scene.crystal, k).data = v.to('cpu')
 
@@ -301,6 +312,7 @@ def refiner_worker(
             'material_roughness': refiner.crystal.material_roughness,
             'material_ior': refiner.crystal.material_ior,
             'light_radiance': refiner.scene.light_radiance,
+            'conj_switch_probs': refiner.conj_switch_probs if refiner_args.use_conj_switching else None,
         }
 
         # Restore the inverse rendering and edge matching settings
@@ -477,7 +489,7 @@ class RefinerPool:
 
     def calculate_losses(
             self,
-            step: int,
+            step: int | str,
             refiner_args: RefinerArgs,
             p_vec_batch: Tensor,
             X_target: List[Path],
@@ -503,11 +515,16 @@ class RefinerPool:
         """
         if self.n_workers < 0:
             raise NotImplementedError('RefinerPool is only configured for parallel processing.')
+        if isinstance(step, str):
+            assert step == 'random', 'step must be an integer or "random"'
+        random_step = step
 
         for idx, p_vec in enumerate(p_vec_batch):
+            if step == 'random':
+                random_step = np.random.randint(0, 1000000)
             job = {
                 'task': 'calculate_losses',
-                'step': step,
+                'step': random_step if step == 'random' else step,
                 'batch_idx': idx,
                 'refiner_args': refiner_args.to_dict(),
                 'p_vec': to_numpy(p_vec_batch[idx]),

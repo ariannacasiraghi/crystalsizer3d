@@ -29,8 +29,10 @@ class SequenceEncoder(BaseNet):
         for k in PARAMETER_KEYS:
             if k in scene_dict:
                 v = scene_dict[k]
-            else:
+            elif k in scene_dict['crystal']:
                 v = scene_dict['crystal'][k]
+            else:
+                continue
             n = len(v) if isinstance(v, (list, tuple)) else 1
             self.parameter_shapes[k] = n
             if k in stationary_parameters:

@@ -15,8 +15,8 @@ from crystalsizer3d import N_WORKERS, logger
 from crystalsizer3d.crystal import Crystal
 from crystalsizer3d.scene_components.scene import Scene
 from crystalsizer3d.scene_components.utils import orthographic_scale_factor
-from crystalsizer3d.sequence.plots import annotate_image, annotate_image_with_keypoints, plot_distances, \
-    plot_light_radiance, plot_material_properties, plot_origin, plot_rotation
+from crystalsizer3d.sequence.plots import annotate_image, annotate_image_with_keypoints, plot_conj_switch_probs, \
+    plot_distances, plot_light_radiance, plot_material_properties, plot_origin, plot_rotation
 from crystalsizer3d.util.parallelism import start_process, stop_event as global_stop_event
 from crystalsizer3d.util.utils import to_numpy
 
@@ -281,7 +281,7 @@ class SequencePlotter:
             face_groups=face_groups,
             make_means_plot=False,
         )
-        for plot_type in ['distances', 'origin', 'rotation', 'material', 'light']:
+        for plot_type in ['distances', 'origin', 'rotation', 'material', 'light', 'conj_switch_probs']:
             self.enqueue_job({'plot_type': plot_type, **plot_args})
 
     @staticmethod
@@ -299,6 +299,8 @@ class SequencePlotter:
             fig = plot_material_properties(**job)
         elif job['plot_type'] == 'light':
             fig = plot_light_radiance(**job)
+        elif job['plot_type'] == 'conj_switch_probs' and 'conjugate_switch_probs' in job['parameters']:
+            fig = plot_conj_switch_probs(**job)
         else:
             raise ValueError(f'Invalid plot type: {job["plot_type"]}')
         save_dir = job['plot_dir'] / job['plot_type']
@@ -332,7 +334,7 @@ class SequencePlotter:
         """
         include_keys = ['total', 'measurement', 'l1', 'l2', 'perceptual', 'latents',
                         'overshoot', 'symmetry', 'z_pos', 'rotation_xy', 'keypoints', 'edge_matching',
-                        'negative_growth']
+                        'negative_growth', 'switch']
         losses = {k: job['losses'][k] for k in include_keys if k in job['losses'] and job['losses'][k] is not None}
         measurements = job['measurements']
         n = len(losses)
@@ -349,6 +351,7 @@ class SequencePlotter:
             ax.set_title(name)
             if name == 'measurement' and measurements is not None:
                 m_idxs = measurements['idx'][measurements['idx'] < len(loss)]
+                m_idxs = np.sort(m_idxs)
                 ax.plot(m_idxs, loss[m_idxs])
             else:
                 ax.plot(loss)
