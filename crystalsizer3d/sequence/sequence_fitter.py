@@ -1242,6 +1242,8 @@ class SequenceFitter:
             sequence_length=N,
             ema_decay=self.sf_args.ema_decay,
             ema_init=self.sf_args.ema_val_init,
+            always_include_idxs=self.sf_args.always_include_idxs,
+            always_include_min=self.sf_args.always_include_min,
         )
         for i in range(N):
             if self.frame_counts[i] > 0:
@@ -1328,8 +1330,8 @@ class SequenceFitter:
                     X_target_denoised_wis=batch[3],
                     keypoints=batch[4],
                     edges=batch[5],
-                    distances_target=None,
-                    vertices_target=None,
+                    distances_target=batch[6],
+                    vertices_target=batch[7],
                     calculate_grads=True,
                     save_annotations=(ra.save_annotations_freq > 0
                                       and (step + 1) % ra.save_annotations_freq == 0),
@@ -1376,14 +1378,6 @@ class SequenceFitter:
                             self.losses['train'][k][idx] = float(v[i])
                         for k, v in p_dict.items():
                             self.parameters['train'][k][idx] = v[i].clone().detach().cpu()
-
-                        # Calculate the measurement loss
-                        if self.measurements is not None and idx in self.measurements['idx']:
-                            idx_m = np.where(self.measurements['idx'] == idx)[0][0]
-                            dists_m = self.measurements['distances'][idx_m] * self.measurements['scale'][idx_m]
-                            dists_p = to_numpy(p_dict['distances'][i] * p_dict['scale'][i])
-                            loss_m = np.sum((dists_m - dists_p)**2)
-                            self.losses['train']['measurement'][idx] = loss_m.item()
 
             # Loop over the batch and use the refiner to calculate the loss for each frame
             else:
@@ -1448,7 +1442,7 @@ class SequenceFitter:
             sampler.update_errors(batch_idxs, losses_batch)
             seq_loss_ema = sampler.errors.sum().item()
             seq_loss = self.losses['train']['total'].sum().item()
-            mes_loss = self.losses['train']['measurement'].sum().item()
+            mes_loss = self.losses['train']['distances'].sum().item()
             self.losses['log']['train'] = torch.concatenate([self.losses['log']['train'],
                                                              torch.tensor(seq_loss)[None, ...]])
             self.tb_logger.add_scalar('losses/seq_train', seq_loss, step)
@@ -1610,8 +1604,8 @@ class SequenceFitter:
                 X_target_denoised_wis=torch.stack([X[3] for X in batch]).permute(0, 2, 3, 1),
                 keypoints=[X[4] for X in batch] if batch[0][4] is not None else [None for _ in batch],
                 edges=[X[5] for X in batch] if batch[0][5] is not None else [None for _ in batch],
-                distances_target=None,
-                vertices_target=None,
+                distances_target=[torch.from_numpy(X[6]) if X[6] is not None else None for X in batch],
+                vertices_target=[torch.from_numpy(X[7]) if X[7] is not None else None for X in batch],
                 calculate_grads=False,
                 save_annotations=save_annotations,
                 save_edge_annotations=save_edge_annotations,
@@ -1657,7 +1651,7 @@ class SequenceFitter:
         # Log the total sequence loss
         if initial_or_eval == 'eval':
             seq_loss = losses['total'].sum().item()
-            mes_loss = losses['measurement'].sum().item()
+            mes_loss = losses['distances'].sum().item()
             self.losses['log']['eval'] = torch.concatenate([self.losses['log']['eval'],
                                                             torch.tensor(seq_loss)[None, ...]])
             self.tb_logger.add_scalar('losses/seq_eval', seq_loss, step)

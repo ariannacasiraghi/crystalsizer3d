@@ -30,6 +30,8 @@ class SequenceFitterArgs(BaseArgs):
             # Adaptive sampler parameters
             ema_decay: float = 0.9,
             ema_val_init: float = 1.0,
+            always_include_idxs: List[int] | None = None,
+            always_include_min: int = 1,
 
             # Pretraining settings
             n_pretraining_steps: int = 1000,
@@ -92,6 +94,8 @@ class SequenceFitterArgs(BaseArgs):
         # Adaptive sampler parameters
         self.ema_decay = ema_decay
         self.ema_val_init = ema_val_init
+        self.always_include_idxs = always_include_idxs
+        self.always_include_min = always_include_min
 
         # Pretraining settings
         self.n_pretraining_steps = n_pretraining_steps
@@ -159,6 +163,10 @@ class SequenceFitterArgs(BaseArgs):
                            help='Exponential moving average decay for the adaptive sampler.')
         group.add_argument('--ema-val-init', type=float, default=1.0,
                            help='Initial values for the exponential moving averages of the adaptive sampler.')
+        group.add_argument('--always-include-idxs', type=lambda s: [int(item) for item in s.split(',')], default=[],
+                            help='Always include "always-include-min" of these frame indices into each sampled batch.')
+        group.add_argument('--always-include-min', type=int, default=1,
+                            help='Minimum number of frames to always include in the sampling.')
 
         # Pretraining settings
         group.add_argument('--n-pretraining-steps', type=int, default=1000,

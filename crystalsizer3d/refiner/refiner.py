@@ -1431,6 +1431,9 @@ class Refiner:
             edge_matching_loss, edge_matching_stats = self._edge_matching_loss()
             anchors_loss, anchors_stats = self._anchors_loss()
 
+            # Manual measurement losses
+            measurement_loss, measurement_stats = self._measurement_losses()
+
             # Combine losses
             loss = image_loss \
                    + overshoot_loss * self.args.w_overshoot \
@@ -1441,21 +1444,19 @@ class Refiner:
                    + temporal_loss * self.args.w_temporal \
                    + keypoints_loss * self.args.w_keypoints \
                    + edge_matching_loss * self.args.w_edge_matching \
-                   + anchors_loss * self.args.w_anchors
+                   + anchors_loss * self.args.w_anchors \
+                   + measurement_loss * self.args.w_measurements
 
             # Patches - recalculate the image losses for each patch
             patch_loss, patch_stats = self._patches_loss()
             loss = loss * self.args.w_fullsize + patch_loss * self.args.w_patches
-
-            # Verification losses - not for optimisation
-            verification_stats = self._verification_losses()
 
             # Combine stats
             stats = {
                 'losses/total': loss.item(),
                 **l1_stats, **l2_stats, **percept_stats, **latent_stats, **rcf_stats, **overshoot_stats,
                 **symmetry_stats, **z_pos_stats, **rxy_stats, **switch_stats, **temporal_stats, **keypoints_stats,
-                **edge_matching_stats, **anchors_stats, **patch_stats, **verification_stats
+                **edge_matching_stats, **anchors_stats, **measurement_stats, **patch_stats
             }
 
         else:
@@ -1931,19 +1932,20 @@ class Refiner:
 
         return loss, stats
 
-    @torch.no_grad()
-    def _verification_losses(self):
+    def _measurement_losses(self):
         """
-        Calculate the verification losses (not for optimisation).
+        Calculate the manual measurement losses.
         """
+        loss = torch.tensor(0.)
         stats = {}
         if self.distances_target is None and self.vertices_target is None:
-            return stats
+            return loss, stats
 
         if self.distances_target is not None:
             d_pred = self.crystal.distances * self.crystal.scale
             loss_d = ((d_pred - self.distances_target)**2).mean()
             stats['losses/distances'] = loss_d.item()
+            loss = loss + loss_d
 
         if self.vertices_target is not None:
             v_pred = self.crystal.vertices
@@ -1952,8 +1954,9 @@ class Refiner:
             dists_min_ba = dists.amin(dim=1)
             loss_v = torch.cat([dists_min_ab, dists_min_ba]).mean()
             stats['losses/vertices'] = loss_v.item()
+            loss = loss + loss_v
 
-        return stats
+        return loss, stats
 
     @torch.no_grad()
     def _make_plots(

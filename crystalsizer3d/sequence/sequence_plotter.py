@@ -300,7 +300,8 @@ class SequencePlotter:
         elif job['plot_type'] == 'light':
             fig = plot_light_radiance(**job)
         elif job['plot_type'] == 'conj_switch_probs':
-            if 'conjugate_switch_probs' not in job['parameters']:
+            if ('conj_switch_probs' not in job['parameters']
+                    or job['parameters']['conj_switch_probs'] is None):
                 return
             fig = plot_conj_switch_probs(**job)
         else:

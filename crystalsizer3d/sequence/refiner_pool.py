@@ -534,8 +534,8 @@ class RefinerPool:
                 'X_target_denoised_wis': to_numpy(X_target_denoised_wis[idx]),
                 'keypoints': to_numpy(keypoints[idx]) if keypoints[idx] is not None else None,
                 'edges': edges[idx],
-                'distances_target': to_numpy(distances_target[idx]) if distances_target is not None else None,
-                'vertices_target': to_numpy(vertices_target[idx]) if vertices_target is not None else None,
+                'distances_target': to_numpy(distances_target[idx]) if distances_target is not None and distances_target[idx] is not None else None,
+                'vertices_target': to_numpy(vertices_target[idx]) if vertices_target is not None and vertices_target[idx] is not None else None,
                 'calculate_grads': calculate_grads,
             }
             self.job_queue.put(job, block=True)
@@ -578,7 +578,8 @@ class RefinerPool:
         # Sort the results by index
         results = sorted(results, key=lambda x: x['batch_idx'])
         losses = init_tensor([r['loss'] for r in results])
-        stats = {k: [r['stats'][k] for r in results] for k in results[0]['stats']}
+        stat_keys = list(set([k for res in results for k in res['stats'].keys()]))
+        stats = {k: [r['stats'][k] if k in r['stats'] else 0 for r in results] for k in stat_keys}
         if calculate_grads:
             p_grads = init_tensor(np.stack([r['p_grads'] for r in results]))
         else:
