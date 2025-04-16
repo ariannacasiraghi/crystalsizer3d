@@ -19,7 +19,7 @@ class AdaptiveSampler:
         self.emas = [EMA(val=ema_init, decay=ema_decay) for _ in range(sequence_length)]
         self.always_include_idxs = always_include_idxs if always_include_idxs is not None else []
         self.always_include_min = always_include_min
-        if self.always_include_idxs is not None and always_include_min > len(self.always_include_idxs):
+        if always_include_idxs is not None and always_include_min > len(self.always_include_idxs):
             raise ValueError(
                 f'Number of always include indices ({len(self.always_include_idxs)}) '
                 f'cannot be smaller than always_include_min ({always_include_min})')
