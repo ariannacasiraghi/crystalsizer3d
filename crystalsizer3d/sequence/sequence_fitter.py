@@ -1249,15 +1249,6 @@ class SequenceFitter:
             if self.frame_counts[i] > 0:
                 sampler.emas[i].val = self.losses['train']['total'][i].item()
 
-        # Dataset
-        self.dataloader = get_data_loader(
-            sequence_fitter=self,
-            adaptive_sampler=sampler,
-            batch_size=bs,
-            n_workers=ra.n_dataloader_workers,
-            prefetch_factor=ra.prefetch_factor,
-        )
-
         # Load the first scene and adapt the crystal to use buffers instead of parameters
         if self.initial_scene is not None:
             scene = self.initial_scene
@@ -1268,6 +1259,22 @@ class SequenceFitter:
             val = crystal.get_parameter(k).data
             del crystal._parameters[k]
             crystal.register_buffer(k, val)
+
+        # Reorder the measurement distances to line up with the miller indices order
+        if self.measurements:
+            mi_ref = self.manager.crystal.all_miller_indices  # measurements are loaded in this order
+            mi_crys = crystal.all_miller_indices
+            mi_idxs = ((mi_ref[None, ...] == mi_crys[:, None]).all(dim=2)).nonzero(as_tuple=True)[1]
+            self.measurements['distances'] = self.measurements['distances'][:, mi_idxs]
+
+        # Dataset
+        self.dataloader = get_data_loader(
+            sequence_fitter=self,
+            adaptive_sampler=sampler,
+            batch_size=bs,
+            n_workers=ra.n_dataloader_workers,
+            prefetch_factor=ra.prefetch_factor,
+        )
 
         # Set up the refiner
         self.refiner.scene = scene
