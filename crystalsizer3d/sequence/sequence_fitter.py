@@ -1449,13 +1449,14 @@ class SequenceFitter:
             sampler.update_errors(batch_idxs, losses_batch)
             seq_loss_ema = sampler.errors.sum().item()
             seq_loss = self.losses['train']['total'].sum().item()
-            mes_loss = self.losses['train']['distances'].sum().item()
             self.losses['log']['train'] = torch.concatenate([self.losses['log']['train'],
                                                              torch.tensor(seq_loss)[None, ...]])
             self.tb_logger.add_scalar('losses/seq_train', seq_loss, step)
             self.tb_logger.add_scalar('losses/seq_train_ema', seq_loss_ema, step)
             self.tb_logger.add_scalar('losses/batch', loss, step)
-            self.tb_logger.add_scalar('losses/measurement_train', mes_loss, step)
+            if 'distances' in self.losses['train']:
+                mes_loss = self.losses['train']['distances'].sum().item()
+                self.tb_logger.add_scalar('losses/measurement_train', mes_loss, step)
             for k in stats_batch.keys():
                 if 'losses' not in k:
                     continue
@@ -1658,11 +1659,12 @@ class SequenceFitter:
         # Log the total sequence loss
         if initial_or_eval == 'eval':
             seq_loss = losses['total'].sum().item()
-            mes_loss = losses['distances'].sum().item()
             self.losses['log']['eval'] = torch.concatenate([self.losses['log']['eval'],
                                                             torch.tensor(seq_loss)[None, ...]])
             self.tb_logger.add_scalar('losses/seq_eval', seq_loss, step)
-            self.tb_logger.add_scalar('losses/measurement_eval', mes_loss, step)
+            if 'distances' in losses:
+                mes_loss = losses['distances'].sum().item()
+                self.tb_logger.add_scalar('losses/measurement_eval', mes_loss, step)
             for k in stats_batch.keys():
                 if 'losses' not in k:
                     continue
