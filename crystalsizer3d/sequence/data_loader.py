@@ -87,10 +87,13 @@ def get_data_loader(
     """
     Get a data loader.
     """
-    measurement_idxs = sequence_fitter.measurements['idx']
-    distances_targets = {}
-    for i, m_idx in enumerate(measurement_idxs):
-        distances_targets[m_idx] = sequence_fitter.measurements['distances'][i] * sequence_fitter.measurements['scale'][i]
+    if sequence_fitter.measurements:
+        measurement_idxs = sequence_fitter.measurements['idx']
+        distances_targets = {}
+        for i, m_idx in enumerate(measurement_idxs):
+            distances_targets[m_idx] = sequence_fitter.measurements['distances'][i] * sequence_fitter.measurements['scale'][i]
+    else:
+        distances_targets = None
 
     dataset = Dataset(
         X_paths=sequence_fitter.X_targets,
