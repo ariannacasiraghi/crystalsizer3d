@@ -589,6 +589,7 @@ class Crystal(nn.Module):
         scale = scale.clip(1e-6, None)
         vertices = vertices * scale
         mesh_vertices = mesh_vertices * scale
+        areas = {hkl: area * scale.item()**2 for hkl, area in areas.items()}
 
         # Step 7: Apply the origin translation
         vertices = vertices + origin
