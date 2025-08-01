@@ -19,6 +19,7 @@ from crystalsizer3d.args.dataset_synthetic_args import DatasetSyntheticArgs
 from crystalsizer3d.args.dataset_training_args import DatasetTrainingArgs
 from crystalsizer3d.crystal import Crystal, ROTATION_MODE_AXISANGLE, ROTATION_MODE_QUATERNION
 from crystalsizer3d.csd_proxy import CSDProxy
+from crystalsizer3d.util.geometry import canonicalise_222_rotation
 from crystalsizer3d.util.utils import ArgsCompatibleJSONEncoder, hash_data, to_numpy
 
 DATASET_TYPE_SYNTHETIC = 'synthetic'
@@ -452,6 +453,19 @@ class Dataset:
             else:
                 assert self.dst_args.rotation_mode == ROTATION_MODE_AXISANGLE
                 rotation = R0.as_rotvec()
+
+            # Canonicalise the rotation if required
+            if self.dst_args.use_canonical_rotations:
+                cs = self.csd_proxy.load(self.dataset_args.crystal_id)
+                assert cs.point_group_symbol == '222', 'Canonical rotations are only supported for 222 point group crystals.'
+                rotation, distances = canonicalise_222_rotation(
+                    rotation=rotation,
+                    distances=np.array(params['distances']),
+                    miller_indices=self.miller_indices,
+                    rotation_mode=self.dst_args.rotation_mode,
+                )
+                params['distances'] = distances
+
             transformation.extend(list(rotation))
             params['transformation'] = np.array(transformation)
 

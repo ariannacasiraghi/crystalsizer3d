@@ -441,9 +441,10 @@ class Crystal(nn.Module):
                     symmetry_idx.append(idx)
 
         # Convert to tensors and attach to self
-        self.all_miller_indices = torch.from_numpy(np.stack(all_miller_indices)).to(torch.int32)
+        device = self.origin.device
+        self.all_miller_indices = torch.from_numpy(np.stack(all_miller_indices)).to(torch.int32).to(device)
         self.all_distances = all_distances
-        self.symmetry_idx = torch.tensor(symmetry_idx)
+        self.symmetry_idx = torch.tensor(symmetry_idx, device=device)
 
     def _calculate_reciprocal_lattice_vectors(self):
         """
@@ -463,7 +464,7 @@ class Crystal(nn.Module):
             b * c * np.sin(alpha),
             c * a * np.sin(beta),
             a * b * np.sin(gamma)
-        ], dtype=self.dtype))
+        ], dtype=self.dtype, device=self.origin.device))
 
     def build_mesh(
             self,

@@ -68,6 +68,11 @@ def load_manual_measurements(
     for k in keys:
         measurements[k] = np.array(measurements[k])
 
+    # Sorting by idx
+    sort_indices = np.argsort(measurements['idx'])
+    for k in keys:
+        measurements[k] = measurements[k][sort_indices]
+
     # Fix the origin for the automatic measurements to match the manual measurements
     ds = manager.ds
     cs = CSDProxy().load(ds.dataset_args.crystal_id)

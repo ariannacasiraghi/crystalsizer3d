@@ -167,6 +167,10 @@ class DatasetTrainingArgs(BaseArgs):
         group.add_argument('--wireframe-blur-variance', type=float, default=1.0,
                            help='Variance of the Gaussian blur applied to the wireframe images.')
 
+        # Canonical rotations
+        group.add_argument('--use-canonical-rotations', type=str2bool, default=False,
+                           help='Canonicalise rotations -- only applicable for crystals with 222 point group.')
+
         # Old arguments, now not recommended
         group.add_argument('--use-distance-switches', type=str2bool, default=False,
                            help='Use distance switches (now disabled).')
@@ -174,6 +178,4 @@ class DatasetTrainingArgs(BaseArgs):
                            help='Add coordinate grid to images as a separate channel.')
         group.add_argument('--check-symmetries', type=int, default=0,
                            help='Check symmetries in the meshes so we can use a more reasonable rotational error to the group.')
-        group.add_argument('--use-canonical-rotations', type=str2bool, default=False,
-                           help='Use canonical rotations for the symmetry group.')
         return group

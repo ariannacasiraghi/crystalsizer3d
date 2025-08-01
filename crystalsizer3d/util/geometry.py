@@ -547,3 +547,61 @@ def sort_face_vertices(vertices: Tensor) -> Tensor:
         sorted_idxs = sorted_idxs.flip(0)
 
     return sorted_idxs
+
+
+def canonicalise_222_rotation(
+        rotation: np.ndarray | Tensor,
+        distances: np.ndarray | Tensor,
+        miller_indices: List[Tuple[int, int, int]],
+        rotation_mode: str,
+) -> Tuple[np.ndarray | Tensor, np.ndarray | Tensor]:
+    """
+    Canonicalise the rotation and adjust distances accordingly.
+    Applicable to crystals with point group 222, which have rotational symmetries around each axis.
+    """
+    from crystalsizer3d.crystal import ROTATION_MODE_AXISANGLE
+
+    EVEN_FLIPS = [
+        (+1, +1, +1),  # identity
+        (-1, -1, +1),  # π about z
+        (-1, +1, -1),  # π about y
+        (+1, -1, -1),  # π about x
+    ]
+
+    if isinstance(rotation, np.ndarray):
+        rotation = torch.from_numpy(rotation)
+        return_numpy_rotation = True
+    else:
+        return_numpy_rotation = False
+    device, dtype = rotation.device, rotation.dtype
+
+    # Current rotation matrix
+    if rotation_mode == ROTATION_MODE_AXISANGLE:
+        R0 = axis_angle_to_rotation_matrix(rotation[None]).squeeze(0)
+    else:
+        R0 = quaternion_to_rotation_matrix(rotation[None]).squeeze(0)
+
+    # Determine if the rotation can be reduced
+    idx_of = {tuple(mi): i for i, mi in enumerate(miller_indices)}
+    best = None  # (angle, perm, R_cand)
+    for sx, sy, sz in EVEN_FLIPS:
+        D = torch.diag(torch.tensor([sx, sy, sz], device=device, dtype=dtype))
+        R_cand = R0 @ D
+        ang = torch.acos(torch.clamp((torch.trace(R_cand) - 1) / 2, -1.0, 1.0))
+        perm = [idx_of[(sx * h, sy * k, sz * l)] for h, k, l in miller_indices]
+        key = (ang.item(), perm)  # tie-break with perm to be deterministic
+        if best is None or key < best[0]:
+            best = (key, perm, R_cand)
+    (_, perm, R_best) = best
+
+    # Update the rotation
+    if rotation_mode == ROTATION_MODE_AXISANGLE:
+        R = rotation_matrix_to_axis_angle(R_best)
+    else:
+        R = rotation_matrix_to_quaternion(R_best)
+        if R[0] < 0:
+            R = -R
+    if return_numpy_rotation:
+        R = to_numpy(R)
+
+    return R, distances[perm]

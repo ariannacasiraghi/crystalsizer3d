@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from geomloss import SamplesLoss
-from kornia.geometry import axis_angle_to_rotation_matrix
+from kornia.geometry import axis_angle_to_rotation_matrix, quaternion_to_rotation_matrix
 from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 from omegaconf import OmegaConf
@@ -2113,21 +2113,27 @@ class Manager:
         Calculate distance losses.
         """
         if self.ds.dataset_args.asymmetry is not None:
-            loss = torch.tensor(0., device=self.device)
+            # If using canonical rotations, then the distances should be aligned
+            if self.dataset_args.use_canonical_rotations:
+                loss = ((d_pred - d_target)**2).mean()
 
-            # Group asymmetric distances by face group
-            for i, hkl in enumerate(self.ds.dataset_args.miller_indices):
-                # Collect the distances for this face group
-                group_idxs = (self.crystal.symmetry_idx == i).nonzero().squeeze()
-                d_pred_i = d_pred[:, group_idxs]
-                d_target_i = d_target[:, group_idxs]
+            # Otherwise, distances may be mismatched within the group, so sort by size
+            else:
+                loss = torch.tensor(0., device=self.device)
 
-                # Sort them
-                d_pred_i, _ = d_pred_i.sort(dim=1)
-                d_target_i, _ = d_target_i.sort(dim=1)
+                # Group asymmetric distances by face group
+                for i, hkl in enumerate(self.ds.dataset_args.miller_indices):
+                    # Collect the distances for this face group
+                    group_idxs = (self.crystal.symmetry_idx == i).nonzero().squeeze()
+                    d_pred_i = d_pred[:, group_idxs]
+                    d_target_i = d_target[:, group_idxs]
 
-                # Calculate losses between the sorted distances
-                loss = loss + ((d_pred_i - d_target_i)**2).mean()
+                    # Sort them
+                    d_pred_i, _ = d_pred_i.sort(dim=1)
+                    d_target_i, _ = d_target_i.sort(dim=1)
+
+                    # Calculate losses between the sorted distances
+                    loss = loss + ((d_pred_i - d_target_i)**2).mean()
         else:
             loss = ((d_pred - d_target)**2).mean()
 
@@ -2168,57 +2174,73 @@ class Manager:
         else:
             scale_loss = torch.tensor(0., device=self.device)
             r_idx = 3
+        v_norms = None
 
-        if self.dataset_args.rotation_mode == ROTATION_MODE_QUATERNION:
-            q_pred = t_pred[:, r_idx:]
-            v_norms = q_pred.norm(dim=-1, keepdim=True)
-            q_pred = q_pred / v_norms
-
-            # Use the sym_rotations, could be different number for each batch item so have to loop over
-            if sym_rotations is not None:
-                bs = len(t_pred)
-                rotation_losses = torch.zeros(bs, device=self.device)
-                self.sym_group_idxs = []
-                for i in range(bs):
-                    q_pred_i = q_pred[i][None, ...]
-                    sym_rotations_i = sym_rotations[i]
-                    dot_product = torch.sum(sym_rotations_i * q_pred_i, dim=-1)
-                    dot_product = torch.clamp(dot_product, -0.99, 0.99)  # Ensure valid input for arccos
-                    angular_differences = 2 * torch.acos(dot_product)
-
-                    # Take the smallest angular difference to any of the symmetric rotations
-                    min_idx = int(torch.argmin(angular_differences))
-                    self.sym_group_idxs.append(min_idx)
-                    rotation_losses[i] = angular_differences[min_idx]
-                rotation_loss = rotation_losses.mean()
+        # If using canonical rotations, we can compare the rotations directly
+        if self.dataset_args.use_canonical_rotations:
+            R_pred_vec = t_pred[:, r_idx:]
+            R_target_vec = t_target[:, r_idx:]
+            if self.dataset_args.rotation_mode == ROTATION_MODE_QUATERNION:
+                R_pred = quaternion_to_rotation_matrix(R_pred_vec)
+                R_target = quaternion_to_rotation_matrix(R_target_vec)
             else:
-                rotation_loss = ((q_pred - t_target[:, r_idx:])**2).mean()
-
-        else:
-            assert self.dataset_args.rotation_mode == ROTATION_MODE_AXISANGLE
-            R_pred = axis_angle_to_rotation_matrix(t_pred[:, r_idx:])
-
-            # Use the sym_rotations, could be different number for each batch item so have to loop over
-            if sym_rotations is not None:
-                bs = len(t_pred)
-                rotation_losses = torch.zeros(bs, device=self.device)
-                self.sym_group_idxs = []
-                for i in range(bs):
-                    sym_rotations_i = sym_rotations[i]
-                    R_pred_i = R_pred[i][None, ...].expand(len(sym_rotations[i]), -1, -1)
-                    angular_differences = geodesic_distance(R_pred_i, sym_rotations_i)
-
-                    # Take the smallest angular difference to any of the symmetric rotations
-                    min_idx = int(torch.argmin(angular_differences))
-                    self.sym_group_idxs.append(min_idx)
-                    rotation_losses[i] = angular_differences[min_idx]
-                rotation_loss = rotation_losses.mean()
-            else:
+                assert self.dataset_args.rotation_mode == ROTATION_MODE_AXISANGLE
+                R_pred = axis_angle_to_rotation_matrix(R_pred_vec)
                 R_target = axis_angle_to_rotation_matrix(t_target[:, r_idx:])
-                rotation_loss = geodesic_distance(R_pred, R_target).mean()
+            rotation_loss = geodesic_distance(R_pred, R_target).mean()
+
+        # Otherwise, we need to compare the rotations, taking sym_rotations into account
+        else:
+            if self.dataset_args.rotation_mode == ROTATION_MODE_QUATERNION:
+                q_pred = t_pred[:, r_idx:]
+                v_norms = q_pred.norm(dim=-1, keepdim=True)
+                q_pred = q_pred / v_norms
+
+                # Use the sym_rotations, could be different number for each batch item so have to loop over
+                if sym_rotations is not None:
+                    bs = len(t_pred)
+                    rotation_losses = torch.zeros(bs, device=self.device)
+                    self.sym_group_idxs = []
+                    for i in range(bs):
+                        q_pred_i = q_pred[i][None, ...]
+                        sym_rotations_i = sym_rotations[i]
+                        dot_product = torch.sum(sym_rotations_i * q_pred_i, dim=-1)
+                        dot_product = torch.clamp(dot_product, -0.99, 0.99)  # Ensure valid input for arccos
+                        angular_differences = 2 * torch.acos(dot_product)
+
+                        # Take the smallest angular difference to any of the symmetric rotations
+                        min_idx = int(torch.argmin(angular_differences))
+                        self.sym_group_idxs.append(min_idx)
+                        rotation_losses[i] = angular_differences[min_idx]
+                    rotation_loss = rotation_losses.mean()
+                else:
+                    rotation_loss = ((q_pred - t_target[:, r_idx:])**2).mean()
+
+            else:
+                assert self.dataset_args.rotation_mode == ROTATION_MODE_AXISANGLE
+                R_pred = axis_angle_to_rotation_matrix(t_pred[:, r_idx:])
+
+                # Use the sym_rotations, could be different number for each batch item so have to loop over
+                if sym_rotations is not None:
+                    bs = len(t_pred)
+                    rotation_losses = torch.zeros(bs, device=self.device)
+                    self.sym_group_idxs = []
+                    for i in range(bs):
+                        sym_rotations_i = sym_rotations[i]
+                        R_pred_i = R_pred[i][None, ...].expand(len(sym_rotations[i]), -1, -1)
+                        angular_differences = geodesic_distance(R_pred_i, sym_rotations_i)
+
+                        # Take the smallest angular difference to any of the symmetric rotations
+                        min_idx = int(torch.argmin(angular_differences))
+                        self.sym_group_idxs.append(min_idx)
+                        rotation_losses[i] = angular_differences[min_idx]
+                    rotation_loss = rotation_losses.mean()
+                else:
+                    R_target = axis_angle_to_rotation_matrix(t_target[:, r_idx:])
+                    rotation_loss = geodesic_distance(R_pred, R_target).mean()
 
         loss = location_loss + scale_loss + rotation_loss
-        if self.dataset_args.rotation_mode != ROTATION_MODE_AXISANGLE:
+        if v_norms is not None:
             preangles_loss = ((v_norms - 1)**2).mean()
             loss = loss + preangles_loss
 
@@ -2229,7 +2251,7 @@ class Manager:
             'losses/transformation': loss.item()
         }
 
-        if self.dataset_args.rotation_mode != ROTATION_MODE_AXISANGLE:
+        if v_norms is not None:
             stats['transformation/l_preangles'] = preangles_loss.item()
 
         return loss, stats

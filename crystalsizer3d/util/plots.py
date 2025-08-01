@@ -372,14 +372,21 @@ def plot_distances(
         for i, hkl in enumerate(ds.dataset_args.miller_indices):
             group_idxs = (manager.crystal.symmetry_idx == i).nonzero().squeeze()
             distance_groups[hkl] = group_idxs
-            dpi = d_pred[group_idxs].argsort()
-            grouped_order_pred.append(group_idxs[dpi])
-            if d_target is not None:
-                dti = d_target[group_idxs].argsort()
-                grouped_order_target.append(group_idxs[dti])
-            if d_pred2 is not None:
-                dp2i = d_pred2[group_idxs].argsort()
-                grouped_order_pred2.append(group_idxs[dp2i])
+            if ds.dst_args.use_canonical_rotations:
+                grouped_order_pred.append(group_idxs)
+                if d_target is not None:
+                    grouped_order_target.append(group_idxs)
+                if d_pred2 is not None:
+                    grouped_order_pred2.append(group_idxs)
+            else:
+                dpi = d_pred[group_idxs].argsort()
+                grouped_order_pred.append(group_idxs[dpi])
+                if d_target is not None:
+                    dti = d_target[group_idxs].argsort()
+                    grouped_order_target.append(group_idxs[dti])
+                if d_pred2 is not None:
+                    dp2i = d_pred2[group_idxs].argsort()
+                    grouped_order_pred2.append(group_idxs[dp2i])
         grouped_order_pred = torch.cat(grouped_order_pred)
         d_pred = d_pred[grouped_order_pred]
         if d_target is not None:
@@ -504,11 +511,16 @@ def plot_areas(
         for i, hkl in enumerate(ds.dataset_args.miller_indices):
             group_idxs = (manager.crystal.symmetry_idx == i).nonzero().squeeze()
             distance_groups[hkl] = group_idxs
-            dpi = d_pred[group_idxs].argsort()
-            grouped_order_pred.append(group_idxs[dpi])
-            if d_target is not None:
-                dti = d_target[group_idxs].argsort()
-                grouped_order_target.append(group_idxs[dti])
+            if ds.dst_args.use_canonical_rotations:
+                grouped_order_pred.append(group_idxs)
+                if d_target is not None:
+                    grouped_order_target.append(group_idxs)
+            else:
+                dpi = d_pred[group_idxs].argsort()
+                grouped_order_pred.append(group_idxs[dpi])
+                if d_target is not None:
+                    dti = d_target[group_idxs].argsort()
+                    grouped_order_target.append(group_idxs[dti])
         grouped_order_pred = torch.cat(grouped_order_pred)
         a_pred = a_pred[grouped_order_pred]
         if d_target is not None:
