@@ -549,6 +549,7 @@ def sort_face_vertices(vertices: Tensor) -> Tensor:
     return sorted_idxs
 
 
+@torch.no_grad()
 def canonicalise_222_rotation(
         rotation: np.ndarray | Tensor,
         distances: np.ndarray | Tensor,
@@ -605,3 +606,77 @@ def canonicalise_222_rotation(
         R = to_numpy(R)
 
     return R, distances[perm]
+
+
+@torch.no_grad()
+def canonicalise_origin(
+        origin: np.ndarray | Tensor,
+        distances: np.ndarray | Tensor,
+        lattice_unit_cell: List[float],
+        lattice_angles: List[float],
+        miller_indices: List[Tuple[int, int, int]],
+        scale: float | Tensor,
+        rotation: np.ndarray | Tensor,
+        rotation_mode: str
+) -> Tuple[np.ndarray | Tensor, np.ndarray | Tensor]:
+    """
+    Canonicalise the crystal's origin.
+    Finds the least-squares solution to the equation N * origin_shift = distances,
+    where N are the normal vectors of the crystal's faces,
+    and origin_shift is the shift needed to adjust the origin.
+    """
+    from crystalsizer3d.crystal import ROTATION_MODE_AXISANGLE
+
+    if isinstance(origin, np.ndarray):
+        origin = torch.from_numpy(origin)
+        distances = torch.from_numpy(distances)
+        if isinstance(scale, np.ndarray):
+            scale = torch.from_numpy(scale)
+        else:
+            scale = torch.tensor(scale, device=origin.device, dtype=origin.dtype)
+        rotation = torch.from_numpy(rotation)
+        return_numpy = True
+    else:
+        return_numpy = False
+    device, dtype = origin.device, origin.dtype
+
+    # Calculate the reciprocal lattice vectors
+    a, b, c = lattice_unit_cell
+    alpha, beta, gamma = lattice_angles
+
+    # Calculate volume of the unit cell
+    volume = (a * b * c
+              * np.sqrt(
+                1 - np.cos(alpha)**2 - np.cos(beta)**2 - np.cos(gamma)**2
+                + 2 * np.cos(alpha) * np.cos(beta) * np.cos(gamma)))
+
+    # Calculate reciprocal lattice vectors
+    lattice_vectors_star = (2 * torch.pi / volume) * torch.diag(torch.tensor([
+        b * c * np.sin(alpha),
+        c * a * np.sin(beta),
+        a * b * np.sin(gamma)
+    ], device=device, dtype=dtype))
+
+    # Compute plane normals
+    mi = torch.tensor(miller_indices, device=device, dtype=dtype)
+    N = normalise(
+        torch.matmul(lattice_vectors_star, mi.T).T
+    )
+
+    origin_shift = torch.linalg.pinv(N) @ distances
+
+    # Adjust the distances to match the new origin
+    new_distances = distances - N @ origin_shift
+
+    # Update the origin
+    if rotation_mode == ROTATION_MODE_AXISANGLE:
+        R = axis_angle_to_rotation_matrix(rotation[None]).squeeze(0)
+    else:
+        R = quaternion_to_rotation_matrix(rotation[None]).squeeze(0)
+    origin = origin + (R @ origin_shift) * scale
+
+    if return_numpy:
+        origin = to_numpy(origin)
+        new_distances = to_numpy(new_distances)
+
+    return origin, new_distances

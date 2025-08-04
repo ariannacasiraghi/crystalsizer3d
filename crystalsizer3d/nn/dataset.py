@@ -19,7 +19,7 @@ from crystalsizer3d.args.dataset_synthetic_args import DatasetSyntheticArgs
 from crystalsizer3d.args.dataset_training_args import DatasetTrainingArgs
 from crystalsizer3d.crystal import Crystal, ROTATION_MODE_AXISANGLE, ROTATION_MODE_QUATERNION
 from crystalsizer3d.csd_proxy import CSDProxy
-from crystalsizer3d.util.geometry import canonicalise_222_rotation
+from crystalsizer3d.util.geometry import canonicalise_222_rotation, canonicalise_origin
 from crystalsizer3d.util.utils import ArgsCompatibleJSONEncoder, hash_data, to_numpy
 
 DATASET_TYPE_SYNTHETIC = 'synthetic'
@@ -423,22 +423,9 @@ class Dataset:
 
         # Transformation parameters are normalised by the dataset statistics
         if self.dst_args.train_transformation or self.dst_args.train_3d:
-            # Normalise the origin to [-1, 1] x 3, but scale together
             origin = np.array(r_params['crystal']['origin'])
-            l_max = np.array([self.ds_stats[xyz]['max'] for xyz in 'xyz'])
-            l_min = np.array([self.ds_stats[xyz]['min'] for xyz in 'xyz'])
-            ranges = l_max - l_min
-            range_max = ranges.max()
-            origin = 2 * (origin - l_min - ranges / 2) / range_max
-            transformation = [*origin, ]
-
-            if self.dst_args.train_scale:
-                # Standardise the scale to [eps, 1]
-                scale = eps_1_normalise(r_params['crystal']['scale'], 's', MIN_NORMALISED_SCALE)
-                transformation.append(scale)
-            else:
-                # Multiply the distances by the scale
-                params['distances'] *= r_params['crystal']['scale']
+            distances = params['distances']
+            scale = r_params['crystal']['scale']
 
             # Rotation representation in the dataset
             if self.dataset_args.rotation_mode == ROTATION_MODE_QUATERNION:
@@ -460,12 +447,41 @@ class Dataset:
                 assert cs.point_group_symbol == '222', 'Canonical rotations are only supported for 222 point group crystals.'
                 rotation, distances = canonicalise_222_rotation(
                     rotation=rotation,
-                    distances=np.array(params['distances']),
+                    distances=distances,
                     miller_indices=self.miller_indices,
                     rotation_mode=self.dst_args.rotation_mode,
                 )
-                params['distances'] = distances
 
+                # Also canonicalise the origin
+                origin, distances = canonicalise_origin(
+                    origin=origin,
+                    distances=distances,
+                    lattice_unit_cell=cs.lattice_unit_cell,
+                    lattice_angles=cs.lattice_angles,
+                    miller_indices=self.miller_indices,
+                    scale=scale,
+                    rotation=rotation,
+                    rotation_mode=self.dst_args.rotation_mode,
+                )
+
+            # Normalise the origin to [-1, 1] x 3, but scale together
+            l_max = np.array([self.ds_stats[xyz]['max'] for xyz in 'xyz'])
+            l_min = np.array([self.ds_stats[xyz]['min'] for xyz in 'xyz'])
+            ranges = l_max - l_min
+            range_max = ranges.max()
+            origin = 2 * (origin - l_min - ranges / 2) / range_max
+            transformation = [*origin, ]
+
+            if self.dst_args.train_scale:
+                # Standardise the scale to [eps, 1]
+                scale = eps_1_normalise(scale, 's', MIN_NORMALISED_SCALE)
+                transformation.append(scale)
+            else:
+                # Multiply the distances by the scale
+                distances *= scale
+
+            # Update parameters
+            params['distances'] = distances
             transformation.extend(list(rotation))
             params['transformation'] = np.array(transformation)
 
