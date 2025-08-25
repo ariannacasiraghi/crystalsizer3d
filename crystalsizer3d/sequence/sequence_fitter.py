@@ -1250,10 +1250,7 @@ class SequenceFitter:
                 sampler.emas[i].val = self.losses['train']['total'][i].item()
 
         # Load the first scene and adapt the crystal to use buffers instead of parameters
-        if self.initial_scene is not None:
-            scene = self.initial_scene
-        else:
-            scene = Scene.from_yml(self.scenes['train'][0]['path'])
+        scene = Scene.from_yml(self.scenes['train'][0]['path'])
         crystal = scene.crystal
         for k in list(crystal._parameters.keys()):
             val = crystal.get_parameter(k).data
