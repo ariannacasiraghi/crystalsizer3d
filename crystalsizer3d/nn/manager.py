@@ -945,6 +945,7 @@ class Manager:
             metric_keys.append('losses/transformation')
         if self.dataset_args.train_3d:
             metric_keys.append('losses/3d')
+            metric_keys.append('3d/l_vertices')
         if self.dataset_args.train_material:
             metric_keys.append('losses/material')
         if self.dataset_args.train_light:
