@@ -166,6 +166,24 @@ def refiner_worker(
         # Update args
         refiner.args = refiner_args
 
+        # Check if rendering parameters have changed
+        rebuild_mi_scene = False
+        if refiner.args.rendering_size != refiner.scene.res:
+            refiner.scene.res = refiner.args.rendering_size
+            rebuild_mi_scene = True
+        if refiner.args.spp != refiner.scene.spp:
+            refiner.scene.spp = refiner.args.spp
+            rebuild_mi_scene = True
+        if refiner.args.integrator_max_depth != refiner.scene.integrator_max_depth:
+            refiner.scene.integrator_max_depth = refiner.args.integrator_max_depth
+            rebuild_mi_scene = True
+        if refiner.args.integrator_rr_depth != refiner.scene.integrator_rr_depth:
+            refiner.scene.integrator_rr_depth = refiner.args.integrator_rr_depth
+            rebuild_mi_scene = True
+        if rebuild_mi_scene:
+            refiner.scene.build_mi_scene()
+            refiner.scene_params = mi.traverse(refiner.scene.mi_scene)
+
         # Update targets
         refiner.X_target = X_target
         refiner.X_target_denoised = X_target_denoised
