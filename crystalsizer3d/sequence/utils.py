@@ -10,6 +10,7 @@ from crystalsizer3d.args.sequence_fitter_args import SequenceFitterArgs
 from crystalsizer3d.crystal import Crystal
 from crystalsizer3d.csd_proxy import CSDProxy
 from crystalsizer3d.nn.manager import Manager
+from crystalsizer3d.util.geometry import canonicalise_222_rotation
 from crystalsizer3d.util.utils import init_tensor, to_numpy
 
 measurements_cache = {}
@@ -51,6 +52,19 @@ def load_manual_measurements(
         if file_path.name == 'volumes.json':
             continue
         crystal = Crystal.from_json(file_path)
+
+        # Canonicalise the rotation for orthorhombic crystals
+        if manager.crystal.point_group_symbol == '222':
+            rotation, distances = canonicalise_222_rotation(
+                rotation=crystal.rotation,
+                distances=crystal.distances,
+                miller_indices=crystal.all_miller_indices.tolist(),
+                rotation_mode=crystal.rotation_mode,
+            )
+            crystal.rotation.data = init_tensor(rotation)
+            crystal.distances.data = init_tensor(distances)
+            crystal._init()
+
         idx = int(file_path.stem)
         for k in keys:
             if k == 'idx':
