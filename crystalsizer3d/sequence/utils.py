@@ -10,7 +10,7 @@ from crystalsizer3d.args.sequence_fitter_args import SequenceFitterArgs
 from crystalsizer3d.crystal import Crystal
 from crystalsizer3d.csd_proxy import CSDProxy
 from crystalsizer3d.nn.manager import Manager
-from crystalsizer3d.util.geometry import canonicalise_222_rotation
+from crystalsizer3d.util.geometry import canonicalise_222_rotation, canonicalise_origin
 from crystalsizer3d.util.utils import init_tensor, to_numpy
 
 measurements_cache = {}
@@ -32,7 +32,8 @@ def get_image_paths(args: Namespace | SequenceFitterArgs, load_all: bool = False
 
 def load_manual_measurements(
         measurements_dir: Path,
-        manager: Manager
+        manager: Manager,
+        do_canonicalise_origin: bool = False,
 ) -> Dict[str, np.ndarray | list]:
     """
     Load manual measurements from the measurements directory.
@@ -62,6 +63,21 @@ def load_manual_measurements(
                 rotation_mode=crystal.rotation_mode,
             )
             crystal.rotation.data = init_tensor(rotation)
+            crystal.distances.data = init_tensor(distances)
+            crystal._init()
+
+        if do_canonicalise_origin:
+            origin, distances = canonicalise_origin(
+                origin=crystal.origin,
+                distances=crystal.distances,
+                lattice_unit_cell=crystal.lattice_unit_cell,
+                lattice_angles=crystal.lattice_angles,
+                miller_indices=crystal.all_miller_indices.tolist(),
+                scale=crystal.scale,
+                rotation=crystal.rotation,
+                rotation_mode=crystal.rotation_mode,
+            )
+            crystal.origin.data = init_tensor(origin)
             crystal.distances.data = init_tensor(distances)
             crystal._init()
 
@@ -106,11 +122,9 @@ def load_manual_measurements(
             distances_new[i] = to_numpy(crystal.distances)
         return distances_new
 
-    # Use the origin from the first measured frame for all other frames
-    origin0 = init_tensor(measurements['origin'][0])
-
     # Ensure the measurements all have the same origin
-    if len(np.unique(measurements['origin'], axis=0)) != 1:
+    if not do_canonicalise_origin and len(np.unique(measurements['origin'], axis=0)) != 1:
+        origin0 = init_tensor(measurements['origin'][0])
         measurements['distances'] = adjust_distances(measurements['distances'], measurements['origin'])
         measurements['origin'] = np.repeat(origin0[None, ...], len(measurements['origin']), axis=0)
 

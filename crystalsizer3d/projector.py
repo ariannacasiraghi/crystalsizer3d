@@ -110,7 +110,7 @@ class Projector:
         # Set image size and aspect ratio
         self.image_size = init_tensor(image_size, dtype=torch.int, device=self.device)
         self.aspect_ratio = image_size[0] / image_size[1]
-        self.view_axis = normalise(init_tensor(camera_axis, device=self.device))
+        self.view_axis = normalise(init_tensor(camera_axis, device=self.device, dtype=crystal.dtype))
         self.zoom = zoom
         self.x_range = init_tensor([-self.aspect_ratio, self.aspect_ratio], device=self.device) / self.zoom
         self.y_range = init_tensor([-1, 1], device=self.device) / self.zoom

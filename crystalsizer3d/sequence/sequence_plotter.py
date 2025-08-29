@@ -118,6 +118,7 @@ class SequencePlotter:
         if isinstance(X, Tensor):
             X = to_numpy(X)
         if X.dtype in [np.float32, np.float64]:
+            X = np.clip(X, 0, 1)
             X = (X * 255).astype(np.uint8)
         if X.ndim == 3 and X.shape[0] == 1:
             X = X[0]

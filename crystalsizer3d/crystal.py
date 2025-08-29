@@ -720,29 +720,37 @@ class Crystal(nn.Module):
         """
         scale = self.scale.clone()
         rotation = self.rotation.clone()
-        self.scale.data.fill_(1.)
-        self.rotation.data.fill_(0.)
         v_old, f_old = self.build_mesh()
 
+        # Get the rotation that was used with the old origin
+        if self.rotation_mode == ROTATION_MODE_AXISANGLE:
+            tensor_args = dict(device=self.origin.device, dtype=rotation.dtype)
+            if torch.allclose(rotation, torch.zeros(3, **tensor_args)):
+                rotation = rotation + torch.randn(3, **tensor_args) * 1e-8
+            R = axis_angle_to_rotation_matrix(rotation[None, :]).squeeze(0)
+        elif self.rotation_mode == ROTATION_MODE_QUATERNION:
+            R = quaternion_to_rotation_matrix(rotation[None, :]).squeeze(0)
+        else:
+            raise ValueError(f'Unsupported rotation mode: {self.rotation_mode}')
+
         # Adjust the distances to match the new origin
-        origin_shift = self.origin - new_origin
-        for j, N in enumerate(self.N):
+        origin_shift = (self.origin - new_origin) @ R / scale
+        d_new = self.distances.clone()
+        for j, N in enumerate(self.N[:len(self.distances)]):
             d = self.distances[j]
             adjust = origin_shift @ N  # Distance to shift perpendicular to the face normal
-            self.distances.data[j] = d + adjust
+            d_new[j] = d + adjust
+        assert torch.all(self.distances >= 0), 'Negative distances found after adjusting origin!'
 
-        # Update origin
+        # Update origin and distances
         self.origin.data = new_origin
+        self.distances.data = d_new
 
         # Verify the shape still matches
         if verify:
             v_new, f_new = self.build_mesh()
             assert torch.allclose(v_old, v_new, atol=1e-6), 'Vertices do not match!'
             assert torch.allclose(f_old, f_new), 'Faces do not match!'
-
-        # Restore scale and rotation
-        self.scale.data = scale
-        self.rotation.data = rotation
 
 
 def plot_uv_map(rows, row_heights, col_widths, sf, uv_mask):

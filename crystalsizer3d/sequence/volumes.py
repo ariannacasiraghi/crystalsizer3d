@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import List, Tuple, Dict
 
 import numpy as np
 import torch
@@ -17,18 +18,34 @@ from crystalsizer3d.util.image_scale import get_pixels_to_mm_scale_factor
 from crystalsizer3d.util.utils import init_tensor, json_to_numpy, to_numpy
 
 
+def _load_args(path: Path, path_substitutions: List[Tuple[str, str]] | None = None) -> Dict[str, str]:
+    """
+    Fix paths in the args dictionary to use substituted paths.
+    """
+    if path_substitutions is None:
+        path_substitutions = []
+    with open(path, 'r') as f:
+        args_dict = yaml.load(f, Loader=yaml.FullLoader)
+    for k, v in args_dict.items():
+        if isinstance(v, str):
+            for old, new in path_substitutions:
+                if v.startswith(old):
+                    args_dict[k] = v.replace(old, new)
+                    break
+    return args_dict
+
+
 def _calculate_volumes(
         sf_path: Path,
-        pixel_to_mm: float | None = None
+        pixel_to_mm: float | None = None,
+        path_substitutions: List[Tuple[str, str]] | None = None
 ) -> np.ndarray:
     """
     Calculate the crystal volumes for the fitted sequence.
     """
     # Load the args
-    with open(sf_path / 'args_sequence_fitter.yml', 'r') as f:
-        sf_args = SequenceFitterArgs.from_args(yaml.load(f, Loader=yaml.FullLoader))
-    with open(sf_path / 'args_refiner.yml', 'r') as f:
-        ref_args = RefinerArgs.from_args(yaml.load(f, Loader=yaml.FullLoader))
+    sf_args = SequenceFitterArgs.from_args(_load_args(sf_path / 'args_sequence_fitter.yml', path_substitutions))
+    ref_args = RefinerArgs.from_args(_load_args(sf_path / 'args_refiner.yml', path_substitutions))
     image_paths = get_image_paths(sf_args, load_all=True)
     dist_to_mm = get_pixels_to_mm_scale_factor(sf_args.initial_scene, image_paths[0][1], pixel_to_mm)
 
@@ -41,7 +58,8 @@ def _calculate_volumes(
                 'batch_size': 1
             },
         },
-        save_dir=Path('/tmp')
+        save_dir=Path('/tmp'),
+        path_substitutions=path_substitutions,
     )
 
     # Get a crystal object
@@ -84,7 +102,8 @@ def generate_or_load_volumes(
         sf_path: Path,
         pixel_to_mm: float | None = None,
         cache_only: bool = False,
-        regenerate: bool = False
+        regenerate: bool = False,
+        path_substitutions: List[Tuple[str, str]] | None = None
 ) -> np.ndarray:
     """
     Generate or load the crystal volumes for the fitted sequence.
@@ -107,7 +126,7 @@ def generate_or_load_volumes(
         if cache_only:
             raise RuntimeError(f'Cache could not be loaded!')
         logger.info('Processing crystal sequence.')
-        vols = _calculate_volumes(sf_path, pixel_to_mm)
+        vols = _calculate_volumes(sf_path, pixel_to_mm, path_substitutions)
         with open(vols_path, 'w') as f:
             json.dump(vols.tolist(), f)
 
@@ -118,7 +137,8 @@ def _calculate_manual_measurement_volumes(
         sf_args: SequenceFitterArgs,
         measurements_dir: Path,
         predictor_model_path: Path,
-        pixel_to_mm: float | None = None
+        pixel_to_mm: float | None = None,
+        path_substitutions: List[Tuple[str, str]] | None = None
 ) -> np.ndarray:
     """
     Calculate the crystal volumes for the manual measurements.
@@ -136,7 +156,8 @@ def _calculate_manual_measurement_volumes(
                 'batch_size': 1
             },
         },
-        save_dir=Path('/tmp')
+        save_dir=Path('/tmp'),
+        path_substitutions=path_substitutions,
     )
 
     # Get a crystal object
@@ -181,7 +202,8 @@ def generate_or_load_manual_measurement_volumes(
         predictor_model_path: Path,
         pixel_to_mm: float | None = None,
         cache_only: bool = False,
-        regenerate: bool = False
+        regenerate: bool = False,
+        path_substitutions: List[Tuple[str, str]] | None = None
 ) -> np.ndarray:
     """
     Generate or load the crystal volumes for the manual measurements.
@@ -204,7 +226,8 @@ def generate_or_load_manual_measurement_volumes(
         if cache_only:
             raise RuntimeError(f'Cache could not be loaded!')
         logger.info('Processing manual measurements sequence.')
-        vols = _calculate_manual_measurement_volumes(sf_args, measurements_dir, predictor_model_path, pixel_to_mm)
+        vols = _calculate_manual_measurement_volumes(sf_args, measurements_dir, predictor_model_path, pixel_to_mm,
+                                                     path_substitutions)
         with open(vols_path, 'w') as f:
             json.dump(vols.tolist(), f)
 

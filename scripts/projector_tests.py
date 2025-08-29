@@ -600,8 +600,8 @@ def render_scene():
     args = parser.parse_args()
     scene = Scene.from_yml(args.scene_path)
     crystal = scene.crystal
-    crystal.material_roughness.data = 0.12
-    crystal.distances.data = crystal.distances + torch.randn_like(crystal.distances) * 0.01
+    crystal.material_roughness.data = torch.tensor(0.12)
+    # crystal.distances.data = crystal.distances + torch.randn_like(crystal.distances) * 0.01
     img = scene.render(seed=2512)
     plt.imshow(img)
     plt.show()
@@ -720,8 +720,8 @@ if __name__ == '__main__':
     # show_vertices('alpha9')
     # show_vertex_heatmap('alpha9')
     # show_keypoints('alpha9')
-    make_keypoint_loss_picture()
-    # render_scene()
+    # make_keypoint_loss_picture()
+    render_scene()
     # match_to_scene()
     # make_rotation_video()
     # make_ior_video()

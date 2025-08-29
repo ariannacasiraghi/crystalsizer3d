@@ -60,24 +60,17 @@ class SyntheticFitter:
         self.refiner_args = refiner_args
         assert self.refiner_args.initial_pred_batch_size == 1, 'Initial predictions only supported for batch size 1.'
         self.runtime_args = runtime_args
+        self.dataset_args = DatasetTrainingArgs(dataset_path=sf_args.dataset_path)
         if self.sf_args.seed is not None:
             set_seed(self.sf_args.seed)
-
-        # Initialise the dataset
-        self.dataset_args = DatasetTrainingArgs(
-            dataset_path=sf_args.dataset_path,
-        )
-        self.ds = Dataset(self.dataset_args)
-        ds_idxs = self.ds.train_idxs.copy() if self.sf_args.train_or_test == 'train' else self.ds.test_idxs.copy()
-        np.random.shuffle(ds_idxs)
-        self.ds_idxs = ds_idxs[:self.sf_args.n_samples]
-        self.image_size = self.ds.dataset_args.image_size
-        assert self.refiner_args.rendering_size == self.image_size, 'Rendering size must match dataset image size.'
 
         # Initialise the output directories
         self.base_path = LOGS_PATH / f'ds={self.dataset_args.dataset_path.name}_{self.sf_args.train_or_test}'
         self.path = self.base_path / 'sf' / hash_data([sf_args.to_dict(), refiner_args.to_dict()])
         self._init_output_dirs()
+
+        # Initialise the dataset
+        self._init_dataset()
 
         # Initialise the refiner and the asynchronous plotter
         self._init_refiner()
@@ -136,10 +129,6 @@ class SyntheticFitter:
         # Create the output directory
         self.path.mkdir(parents=True, exist_ok=True)
 
-        # Save the ds idxs
-        with open(self.path / 'ds_idxs.json', 'w') as f:
-            json.dump(self.ds_idxs, f, cls=FlexibleJSONEncoder)
-
         # Initialise from a previous checkpoint
         if self.runtime_args.resume_from is not None:
             assert self.runtime_args.resume_from.exists(), f'Resume from path does not exist: {self.runtime_args.resume_from}'
@@ -165,6 +154,40 @@ class SyntheticFitter:
             yaml.dump(to_dict(self.sf_args), f)
         with open(self.path / 'args_refiner.yml', 'w') as f:
             yaml.dump(to_dict(self.refiner_args), f)
+
+    def _init_dataset(self):
+        """
+        Load the dataset and select the samples to fit.
+        """
+        self.ds = Dataset(self.dataset_args)
+        self.image_size = self.ds.dataset_args.image_size
+        assert self.refiner_args.rendering_size == self.image_size, 'Rendering size must match dataset image size.'
+        ds_idxs = self.ds.train_idxs.copy() if self.sf_args.train_or_test == 'train' else self.ds.test_idxs.copy()
+        np.random.shuffle(ds_idxs)
+        ds_idxs = ds_idxs.tolist()
+
+        # Check the clean images have sufficient contrast
+        selected_idxs = []
+        n_rejected = 0
+        while len(selected_idxs) < self.sf_args.n_samples and len(ds_idxs) > 0:
+            idx = ds_idxs.pop()
+            img = np.array(Image.open(self.ds.data[idx]['image_clean'])).astype(np.float32) / 255.
+            if img.max() - img.min() < 0.1:
+                n_rejected += 1
+                continue
+            selected_idxs.append(idx)
+
+        if len(selected_idxs) < self.sf_args.n_samples:
+            raise RuntimeError(f'Too few samples to fit (all {self.sf_args.n_samples} requested). '
+                               f'Only {len(selected_idxs)} images with sufficient contrast found.')
+        if n_rejected > 0:
+            logger.warning(f'Rejected {n_rejected} images with insufficient contrast.')
+
+        self.ds_idxs = selected_idxs
+
+        # Save the ds idxs
+        with open(self.path / 'ds_idxs.json', 'w') as f:
+            json.dump(self.ds_idxs, f, cls=FlexibleJSONEncoder)
 
     def _init_refiner(self):
         """
@@ -704,10 +727,7 @@ class SyntheticFitter:
         assert ra.n_refiner_workers > 0, 'Refiner workers must be greater than 0.'
 
         # Load the first scene and adapt the crystal to use buffers instead of parameters
-        if self.initial_scene is not None:
-            scene = self.initial_scene
-        else:
-            scene = Scene.from_yml(self.scenes[0]['path'])
+        scene = Scene.from_yml(self.scenes[0]['path'])
 
         # Set up the refiner pool
         if ra.n_refiner_workers > 0:
@@ -817,6 +837,8 @@ class SyntheticFitter:
                 if ck not in self.parameters['checkpoints']:
                     self.parameters['checkpoints'][ck] = {}
                 for k, v in parameters[idx].items():
+                    if k == 'conj_switch_probs' and not self.refiner_args.use_conj_switching:
+                        continue
                     v = init_tensor(v)
                     if k not in self.parameters['current']:
                         if v.ndim == 0:

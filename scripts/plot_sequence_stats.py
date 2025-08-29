@@ -35,6 +35,11 @@ from crystalsizer3d.util.utils import get_crystal_face_groups, hash_data, init_t
 # Off-screen rendering
 mlab.options.offscreen = True
 
+# Path substitutions for loading experiments run on different systems
+path_substitutions = [
+    ('/users/scsti', '/mnt/aire'),
+]
+
 
 def get_args() -> Namespace:
     """
@@ -49,6 +54,8 @@ def get_args() -> Namespace:
                         help='Path to the sequence fitter directory.')
     parser.add_argument('--sf-path2', type=Path,
                         help='Path to a second sequence fitter directory.')
+    parser.add_argument('--pred-outputs-path', type=Path,
+                        help='Path to the predictor output directory (otherwise deduced from the main sf args).')
     parser.add_argument('--start-image', type=int, default=0,
                         help='Start with this image.')
     parser.add_argument('--end-image', type=int, default=-1,
@@ -119,6 +126,21 @@ def _format_xtime(ax: plt.Axes, ts: List[float], add_xlabel: bool = True):
     # ax.set_xlim([ts[0], ts[-1]])
     if add_xlabel:
         ax.set_xlabel('Hours elapsed')
+
+
+def _load_args(path: Path) -> Dict[str, str]:
+    """
+    Fix paths in the args dictionary to use substituted paths.
+    """
+    with open(path, 'r') as f:
+        args_dict = yaml.load(f, Loader=yaml.FullLoader)
+    for k, v in args_dict.items():
+        if isinstance(v, str):
+            for old, new in path_substitutions:
+                if v.startswith(old):
+                    args_dict[k] = v.replace(old, new)
+                    break
+    return args_dict
 
 
 def plot_sequence_errors_for_sampler():
@@ -213,12 +235,9 @@ def plot_distances_and_areas(style: str = 'paper'):
     show_n = 5000
 
     # Load the args
-    with open(args.sf_path / 'args_sequence_fitter.yml', 'r') as f:
-        sf_args = SequenceFitterArgs.from_args(yaml.load(f, Loader=yaml.FullLoader))
-    with open(args.sf_path / 'args_refiner.yml', 'r') as f:
-        ref_args = RefinerArgs.from_args(yaml.load(f, Loader=yaml.FullLoader))
-    with open(args.sf_path / 'args_runtime.yml', 'r') as f:
-        runtime_args = Namespace(**yaml.load(f, Loader=yaml.FullLoader))
+    sf_args = SequenceFitterArgs.from_args(_load_args(args.sf_path / 'args_sequence_fitter.yml'))
+    ref_args = RefinerArgs.from_args(_load_args(args.sf_path / 'args_refiner.yml'))
+    runtime_args = Namespace(**_load_args(args.sf_path / 'args_runtime.yml'))
 
     # Instantiate a manager
     manager = Manager.load(
@@ -229,7 +248,8 @@ def plot_distances_and_areas(style: str = 'paper'):
                 'batch_size': 1
             },
         },
-        save_dir=output_dir
+        save_dir=output_dir,
+        path_substitutions=path_substitutions,
     )
 
     # Set up some variables
@@ -567,12 +587,14 @@ def plot_volume():
     # Load the volumes
     volumes = generate_or_load_volumes(
         sf_path=args.sf_path,
-        cache_only=False
+        cache_only=False,
+        path_substitutions=path_substitutions,
     )
     volumes_m = generate_or_load_manual_measurement_volumes(
         measurements_dir=Path(runtime_args.measurements_dir),
         predictor_model_path=ref_args.predictor_model_path,
-        cache_only=False
+        cache_only=False,
+        path_substitutions=path_substitutions,
     )
 
     # Instantiate a manager
@@ -659,12 +681,14 @@ def plot_concentration():
     # Load the volumes
     volumes = generate_or_load_volumes(
         sf_path=args.sf_path,
-        cache_only=False
+        cache_only=False,
+        path_substitutions=path_substitutions,
     )
     volumes_m = generate_or_load_manual_measurement_volumes(
         measurements_dir=Path(runtime_args.measurements_dir),
         predictor_model_path=ref_args.predictor_model_path,
-        cache_only=False
+        cache_only=False,
+        path_substitutions=path_substitutions,
     )
 
     # Calculate the concentrations
@@ -753,19 +777,17 @@ def plot_volume_and_supersaturation():
     solubility = 7.36
 
     # Load the args
-    with open(args.sf_path / 'args_sequence_fitter.yml', 'r') as f:
-        sf_args = SequenceFitterArgs.from_args(yaml.load(f, Loader=yaml.FullLoader))
-    with open(args.sf_path / 'args_refiner.yml', 'r') as f:
-        ref_args = RefinerArgs.from_args(yaml.load(f, Loader=yaml.FullLoader))
-    with open(args.sf_path / 'args_runtime.yml', 'r') as f:
-        runtime_args = Namespace(**yaml.load(f, Loader=yaml.FullLoader))
+    sf_args = SequenceFitterArgs.from_args(_load_args(args.sf_path / 'args_sequence_fitter.yml'))
+    ref_args = RefinerArgs.from_args(_load_args(args.sf_path / 'args_refiner.yml'))
+    runtime_args = Namespace(**_load_args(args.sf_path / 'args_runtime.yml'))
 
     # Load the volumes
     volumes = generate_or_load_volumes(
         sf_path=args.sf_path,
         pixel_to_mm=args.pixel_to_mm,
         cache_only=False,
-        regenerate=True
+        regenerate=True,
+        path_substitutions=path_substitutions,
     )
     volumes_m = generate_or_load_manual_measurement_volumes(
         sf_args=sf_args,
@@ -773,7 +795,8 @@ def plot_volume_and_supersaturation():
         predictor_model_path=ref_args.predictor_model_path,
         pixel_to_mm=args.pixel_to_mm,
         cache_only=False,
-        regenerate=True
+        regenerate=True,
+        path_substitutions=path_substitutions,
     )
 
     # Calculate the concentrations
@@ -801,7 +824,8 @@ def plot_volume_and_supersaturation():
                 'batch_size': 1
             },
         },
-        save_dir=output_dir
+        save_dir=output_dir,
+        path_substitutions=path_substitutions,
     )
 
     # Load the measurements
@@ -1008,7 +1032,8 @@ def calculate_measurement_errors(
         args: Namespace,
         sf_args: SequenceFitterArgs,
         measurements: Dict[str, np.ndarray],
-        output_dir: Path | None = None
+        output_dir: Path | None = None,
+        mi_ref: Optional[torch.Tensor] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Calculate the measurement errors for the initial prediction.
@@ -1033,11 +1058,16 @@ def calculate_measurement_errors(
     # Calculate errors
     for i, idx in enumerate(measurement_idxs):
         # Build the manually measured crystal
-        crystal.build_mesh(
+        crystal = Crystal(
+            lattice_unit_cell=scene0.crystal.lattice_unit_cell,
+            lattice_angles=scene0.crystal.lattice_angles,
+            miller_indices=mi_ref.tolist(),
+            point_group_symbol=scene0.crystal.point_group_symbol,
             scale=init_tensor(measurements['scale'][i]),
-            distances=init_tensor(measurements['distances'][i]),
-            origin=init_tensor(measurements['origin'][i]),
-            rotation=init_tensor(measurements['rotation'][i]),
+            distances=measurements['distances'][i],
+            origin=measurements['origin'][i],
+            rotation=measurements['rotation'][i],
+            rotation_mode=scene0.crystal.rotation_mode,
         )
         v_target = crystal.vertices.clone().detach()
 
@@ -1052,6 +1082,12 @@ def calculate_measurement_errors(
         # Load the scene crystal
         with open(scenes_dir / f'{idx:04d}.yml', 'r') as f:
             c_params = yaml.load(f, Loader=yaml.FullLoader)['crystal']
+
+        # Reorder the distances to match the miller indices order
+        mi = np.array(c_params['miller_indices'])
+        mi_idxs = ((mi[None, ...] == mi_ref[:, None]).all(dim=2)).nonzero(as_tuple=True)[1]
+        c_params['distances'] = [c_params['distances'][j] for j in mi_idxs]
+
         crystal.build_mesh(
             scale=init_tensor(c_params['scale']),
             distances=init_tensor(c_params['distances']),
@@ -1191,16 +1227,12 @@ def plot_sequence_errors_summary():
     """
     args, output_dir = _init()
     assert args.sf_path2.exists(), f'A second sequence fitter path must be provided.'
-    save_annotations = False
+    save_annotations = True
 
     # Load the args
-    with open(args.sf_path / 'args_sequence_fitter.yml', 'r') as f:
-        sf_args = SequenceFitterArgs.from_args(yaml.load(f, Loader=yaml.FullLoader))
-    with open(args.sf_path / 'args_refiner.yml', 'r') as f:
-        ref_args_dict = yaml.load(f, Loader=yaml.FullLoader)
-        ref_args = RefinerArgs.from_args(ref_args_dict)
-    with open(args.sf_path / 'args_runtime.yml', 'r') as f:
-        runtime_args = Namespace(**yaml.load(f, Loader=yaml.FullLoader))
+    sf_args = SequenceFitterArgs.from_args(_load_args(args.sf_path / 'args_sequence_fitter.yml'))
+    ref_args = RefinerArgs.from_args(_load_args(args.sf_path / 'args_refiner.yml'))
+    runtime_args = Namespace(**_load_args(args.sf_path / 'args_runtime.yml'))
 
     # Instantiate a manager
     manager = Manager.load(
@@ -1211,7 +1243,8 @@ def plot_sequence_errors_summary():
                 'batch_size': 1
             },
         },
-        save_dir=output_dir
+        save_dir=output_dir,
+        path_substitutions=path_substitutions,
     )
 
     # Load measurements
@@ -1221,9 +1254,12 @@ def plot_sequence_errors_summary():
     )
 
     # Fetch the initial predictions
-    pred_args = {k: getattr(ref_args, k) for k in PREDICTOR_ARG_NAMES_BS1}
-    pred_model_id = pred_args['predictor_model_path'].stem[:4]
-    pred_cache_dir = args.sf_path.parent.parent / 'predictor' / f'{pred_model_id}_{hash_data(pred_args)}'
+    if args.pred_outputs_path:
+        pred_cache_dir = args.pred_outputs_path
+    else:
+        pred_args = {k: getattr(ref_args, k) for k in PREDICTOR_ARG_NAMES_BS1}
+        pred_model_id = pred_args['predictor_model_path'].stem[:4]
+        pred_cache_dir = args.sf_path.parent.parent / 'predictor' / f'{pred_model_id}_{hash_data(pred_args)}'
     assert pred_cache_dir.exists(), f'Predictor cache directory does not exist: {pred_cache_dir}'
 
     errors_d = {}
@@ -1247,7 +1283,8 @@ def plot_sequence_errors_summary():
             args=args,
             sf_args=sf_args,
             measurements=measurements,
-            output_dir=annotations_dir
+            output_dir=annotations_dir,
+            mi_ref=manager.crystal.all_miller_indices
         )
 
     # Measurement errors - use distance errors
@@ -1345,11 +1382,11 @@ if __name__ == '__main__':
     # plot_sequence_errors_for_sampler()
     # plot_crystal_images_with_wireframes()
     # plot_3d_crystals()
-    # plot_distances_and_areas(style='supplementary')
+    plot_distances_and_areas(style='supplementary')
     # plot_3d_crystals_with_highlighted_faces()
     # plot_volume()
     # plot_concentration()
-    plot_volume_and_supersaturation()
+    # plot_volume_and_supersaturation()
     # create_legend_plot()
     # plot_sequence_errors()
     # plot_sequence_errors_comparison()
