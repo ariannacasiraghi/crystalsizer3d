@@ -2,7 +2,7 @@ import json
 import os
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
-from typing import Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 import yaml
@@ -12,6 +12,11 @@ from crystalsizer3d import LOGS_PATH, START_TIMESTAMP, logger
 from crystalsizer3d.args.refiner_args import KEYPOINTS_ARG_NAMES, RefinerArgs
 from crystalsizer3d.args.synthetic_fitter_args import SyntheticFitterArgs
 from crystalsizer3d.util.utils import hash_data, json_to_numpy, print_args, set_seed, to_dict
+
+# Path substitutions for loading experiments run on different systems
+path_substitutions = [
+    ('/users/scsti', '/mnt/aire'),
+]
 
 
 def get_args() -> Namespace:
@@ -39,7 +44,7 @@ def get_args() -> Namespace:
     return args
 
 
-def _init() -> Tuple[Namespace, SyntheticFitterArgs, RefinerArgs, Namespace, Path]:
+def _init() -> Tuple[Namespace, SyntheticFitterArgs, RefinerArgs, RefinerArgs, Namespace, Path]:
     """
     Initialise the args and output directory.
     """
@@ -55,21 +60,37 @@ def _init() -> Tuple[Namespace, SyntheticFitterArgs, RefinerArgs, Namespace, Pat
         yaml.dump(spec, f)
 
     # Load the args
-    with open(args.sf_path / 'args_synthetic_fitter.yml', 'r') as f:
-        sf_args = SyntheticFitterArgs.from_args(yaml.load(f, Loader=yaml.FullLoader))
+    sf_args = SyntheticFitterArgs.from_args(_load_args(args.sf_path / 'args_synthetic_fitter.yml'))
+    ref_args = RefinerArgs.from_args(_load_args(args.sf_path / 'args_refiner.yml'))
     with open(args.sf_path / 'args_refiner.yml', 'r') as f:
-        ref_args = RefinerArgs.from_args(yaml.load(f, Loader=yaml.FullLoader))
-    with open(args.sf_path / 'args_runtime.yml', 'r') as f:
-        runtime_args = Namespace(**yaml.load(f, Loader=yaml.FullLoader))
+        ref_args_og_dict = yaml.load(f, Loader=yaml.FullLoader)
+        ref_args_og_dict['check_paths'] = False
+        ref_args_og = RefinerArgs.from_args(ref_args_og_dict)
+    runtime_args = Namespace(**_load_args(args.sf_path / 'args_runtime.yml'))
 
-    return args, sf_args, ref_args, runtime_args, output_dir
+    return args, sf_args, ref_args, ref_args_og, runtime_args, output_dir
+
+
+def _load_args(path: Path) -> Dict[str, str]:
+    """
+    Fix paths in the args dictionary to use substituted paths.
+    """
+    with open(path, 'r') as f:
+        args_dict = yaml.load(f, Loader=yaml.FullLoader)
+    for k, v in args_dict.items():
+        if isinstance(v, str):
+            for old, new in path_substitutions:
+                if v.startswith(old):
+                    args_dict[k] = v.replace(old, new)
+                    break
+    return args_dict
 
 
 def plot_fitting_losses():
     """
     Plot the fitting losses.
     """
-    args, sf_args, ref_args, runtime_args, output_dir = _init()
+    args, sf_args, ref_args, ref_args_og, runtime_args, output_dir = _init()
     N = sf_args.n_samples
 
     # Load the ds idxs
@@ -104,13 +125,14 @@ def plot_fitting_losses():
             L_v[i] = losses['init']['vertices']
         else:
             ck = str(checkpoints[i - 1])
-            L_x[i] = losses['checkpoints'][ck]['l2']
+            if 'l2' in losses['checkpoints'][ck]:
+                L_x[i] = losses['checkpoints'][ck]['l2']
             L_k[i] = losses['checkpoints'][ck]['keypoints']
             L_d[i] = losses['checkpoints'][ck]['distances']
             L_v[i] = losses['checkpoints'][ck]['vertices']
 
     # Load the keypoints
-    kp_model_args = {k: getattr(ref_args, k) for k in KEYPOINTS_ARG_NAMES}
+    kp_model_args = {k: getattr(ref_args_og, k) for k in KEYPOINTS_ARG_NAMES}
     kp_model_id = kp_model_args['keypoints_model_path'].stem[:4]
     keypoints_dir = args.sf_path.parent.parent / 'keypoints' / f'{kp_model_id}_{hash_data(kp_model_args)}' / 'keypoints'
     assert keypoints_dir.exists(), f'Keypoints cache dir does not exist: {keypoints_dir}'
@@ -175,8 +197,10 @@ def plot_fitting_losses():
         ax_.violinplot(L_.T, widths=0.7, showmeans=False, showmedians=False)
 
         # Plot the mean and median
-        ax_.plot(x_vals, np.mean(L_, axis=1), color='red', linestyle='--', label='Mean', marker='x', markersize=8)
-        ax_.plot(x_vals, np.median(L_, axis=1), color='purple', linestyle='--', label='Median', marker='o',
+        nz = np.abs(L_).sum(axis=1) > 0
+        x_vals_nz = x_vals[nz]
+        ax_.plot(x_vals_nz, np.mean(L_, axis=1)[nz], color='red', linestyle='--', label='Mean', marker='x', markersize=8)
+        ax_.plot(x_vals_nz, np.median(L_, axis=1)[nz], color='purple', linestyle='--', label='Median', marker='o',
                  markerfacecolor='none', markersize=7)
 
         ax_.set_yscale('log')

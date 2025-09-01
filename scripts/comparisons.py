@@ -144,12 +144,10 @@ def process_experiment(
     )
 
     # Load the first scene and adapt the crystal to use buffers instead of parameters
-    scene = Scene.from_yml(sf_args.initial_scene)
-    crystal = scene.crystal
+    crystal = manager.crystal.clone()
     crystal.to('cpu')
     crystal.dtype = torch.float64
     crystal = crystal.clone()
-    # crystal.to(torch.float64)
 
     # Reorder the measurement distances to line up with the miller indices order
     mi_ref = manager.crystal.all_miller_indices  # measurements are loaded in this order

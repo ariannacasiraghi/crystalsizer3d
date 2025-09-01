@@ -236,6 +236,8 @@ class RefinerArgs(BaseArgs):
             plot_colour_target: str = 'red',
             plot_colour_pred: str = 'darkblue',
 
+            check_paths: bool = True,
+
             **kwargs
     ):
         # Ensure all paths are Paths
@@ -257,17 +259,17 @@ class RefinerArgs(BaseArgs):
             rcf_model_path = Path(rcf_model_path)
 
         # Predictor model and target image
-        if predictor_model_path is not None:
+        if predictor_model_path is not None and check_paths:
             assert predictor_model_path.exists(), f'Predictor model path does not exist: {predictor_model_path}'
             assert predictor_model_path.suffix == '.json', f'Predictor model path must be a json file: {predictor_model_path}'
         self.predictor_model_path = predictor_model_path
-        if image_path is not None:
+        if image_path is not None and check_paths:
             assert image_path.exists(), f'Image path does not exist: {image_path}'
         self.image_path = image_path
         self.ds_idx = ds_idx
 
         # Denoising settings
-        if denoiser_model_path is not None:
+        if denoiser_model_path is not None and check_paths:
             assert denoiser_model_path.exists(), f'DN model path does not exist: {denoiser_model_path}'
         self.denoiser_model_path = denoiser_model_path
         self.denoiser_n_tiles = denoiser_n_tiles
@@ -284,7 +286,7 @@ class RefinerArgs(BaseArgs):
         self.initial_pred_max_img_size = initial_pred_max_img_size
 
         # Keypoint detection settings
-        if keypoints_model_path is not None:
+        if keypoints_model_path is not None and check_paths:
             assert keypoints_model_path.exists(), f'Keypoints model path does not exist: {keypoints_model_path}'
         self.keypoints_model_path = keypoints_model_path
         self.keypoints_oversize_input = keypoints_oversize_input
@@ -302,7 +304,7 @@ class RefinerArgs(BaseArgs):
         self.keypoints_loss_type = keypoints_loss_type
 
         # Edge detection settings
-        if edges_model_path is not None:
+        if edges_model_path is not None and check_paths:
             assert edges_model_path.exists(), f'Edges model path does not exist: {edges_model_path}'
         self.edges_model_path = edges_model_path
         self.edges_oversize_input = edges_oversize_input
