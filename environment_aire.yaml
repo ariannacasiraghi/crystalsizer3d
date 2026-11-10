@@ -1,0 +1,43 @@
+# MSc project environment for Aire (follows setup.py; no CSD, mayavi or wxpython).
+# Build with: PIP_CONSTRAINT=$HOME/crystalsizer3d/pip_constraints.txt conda env create -f environment_aire.yaml
+# Then, inside the activated env: PIP_CONSTRAINT=$HOME/crystalsizer3d/pip_constraints.txt pip install --no-build-isolation "pyfastnoisesimd>=0.4,<0.5"
+# Then: pip install -e ~/crystalsizer3d --no-deps
+name: crystalsizer3d
+channels:
+  - conda-forge
+  - pytorch
+  - nvidia
+dependencies:
+  - python=3.11
+  - pytorch=2.4
+  - torchvision=0.19
+  - pytorch-cuda=12.1
+  - numpy>=1.26,<2
+  - matplotlib>=3.9,<4.0
+  - pillow>=10.4,<10.5
+  - pyyaml>=6.0,<6.1
+  - scikit-image>=0.24,<0.25
+  - tensorboard>=2.17,<2.18
+  - trimesh>=4.4,<4.5
+  - ffmpeg-python>=0.2,<0.3
+  - filelock>=3.13,<3.14
+  - python-dotenv>=1.0,<1.1
+  - configobj>=5.0,<5.1
+  - einops>=0.8,<0.9
+  - omegaconf>=2.3,<2.4
+  - orjson>=3.10,<4.0
+  - ruamel.yaml>=0.18,<1.0
+  - pip
+  - pip:
+    - timm>=1.0,<1.1
+    - transformers>=4.44,<4.45
+    - lightning>=2.4,<2.5
+    - kornia>=0.7,<0.8
+    - geomloss>=0.2,<0.3
+    - torchjd>=0.2,<0.3
+    - gigagan-pytorch>=0.2,<0.3
+    - parti-pytorch>=0.2,<0.3
+    - mitsuba>=3.5,<3.6
+    - opencv-python>=4.10,<5.0
+    - pymatgen>=2024.9,<2024.10
+    - xxhash>=3.5,<4.0
