@@ -1,6 +1,6 @@
-# MSc project environment for Aire (follows setup.py; no CSD, mayavi or wxpython).
-# Build with: PIP_CONSTRAINT=$HOME/crystalsizer3d/pip_constraints_aire.txt conda env create -f environment_aire.yaml
-# Then, inside the activated env: PIP_CONSTRAINT=$HOME/crystalsizer3d/pip_constraints_aire.txt pip install --no-build-isolation "pyfastnoisesimd>=0.4,<0.5"
+# MSc project environment for the Leeds HPC systems (Aire and Calder) (follows setup.py; no CSD, mayavi or wxpython).
+# Build with: PIP_CONSTRAINT=$HOME/crystalsizer3d/pip_constraints_hpc.txt conda env create -f eenvironment_hpc.yaml
+# Then, inside the activated env: PIP_CONSTRAINT=$HOME/crystalsizer3d/pip_constraints_hpc.txt pip install --no-build-isolation "pyfastnoisesimd>=0.4,<0.5"
 # Then: pip install -e ~/crystalsizer3d --no-deps
 name: crystalsizer3d
 channels:

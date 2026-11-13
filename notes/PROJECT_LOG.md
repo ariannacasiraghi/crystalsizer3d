@@ -56,7 +56,7 @@ Notes:
 - Workflow decisions:
   - Work directly on `main` of the fork with small, clear commits. No pull requests planned.
   - Tag the first reproduced baseline (e.g. `baseline-regnetz`) and later milestones.
-- `environment_aire.yaml` and `pip_constraints_aire.txt` are my additions.
+- `environment_hpc.yaml` and `pip_constraints_hpc.txt` are my additions.
 
 ---
 
@@ -64,9 +64,9 @@ Notes:
 
 Decision: stay close to the original pinned environment, get it running first, update packages only if something forces it.
 
-`environment_aire.yaml` (built for Aire) differs from the original `environment.yml`:
+`environment_hpc.yaml` differs from the original `environment.yml`:
 
-| | Original | Aire environment |
+| | Original environment | New environment |
 |---|---|---|
 | Python | 3.9 | 3.11 |
 | PyTorch / torchvision | 2.3 / 0.18 | 2.4 / 0.19 (CUDA 12.1 runtime via conda) |
@@ -127,7 +127,6 @@ Links in the home directory (home is shared; scratch is not):
 ### Calder GPU test job
 - Script: `calder_jobs/gpu_test.sh` (1 H200, 10 min limit; loads modules, activates `crystalsizer3d`, runs `nvidia-smi` and a one-line PyTorch CUDA check). Output goes to `~/job_logs_calder`.
 - Submitted as job 857380; queued with reason `Priority`; Slurm's estimated start was 13 Nov 2026, 20:14. Result pending.
-- It will also be the first test of whether the Aire-built environment works on Calder.
 
 ---
 
