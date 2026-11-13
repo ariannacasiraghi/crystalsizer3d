@@ -54,9 +54,12 @@ Notes:
 - Forked the authors' public repo to my GitHub account, cloned on my local Windows machine, as well as on Aire and Calder.
 - Structure: `crystalsizer3d/` (library classes), `scripts/` (entry points, e.g. `train_synthetic.py`), `app/` (not needed), `aire_jobs/` and `calder_jobs/` (my job scripts).
 - Workflow decisions:
-  - Work directly on `main` of the fork with small, clear commits. No pull requests planned.
+  - Work directly on `master` of the fork with small, clear commits. No pull requests planned.
   - Tag the first reproduced baseline (e.g. `baseline-regnetz`) and later milestones.
 - `environment_hpc.yaml` and `pip_constraints_hpc.txt` are my additions.
+- scripts/train_synthetic.py (86 lines): parses eight argument groups (crystalsizer3d/args/), builds one Manager, calls manager.train(n_epochs). The predictor type is --base-net; timm loads RegNetZ via crystalsizer3d/nn/models/timmnet.py (pretrained=True, num_classes=0).
+- Manager (crystalsizer3d/nn/manager.py) handles all networks. Key places: init_data_loaders, init_predictor, train. Denoiser and keypoint-detector setup only runs if train_denoiser / train_keypoint_detector is set.
+
 
 ---
 
@@ -77,9 +80,9 @@ Decision: stay close to the original pinned environment, get it running first, u
 
 - Added: scikit-image, einops, omegaconf, orjson, ruamel.yaml, configobj, lightning, geomloss, torchjd, xxhash.
 - Not needed: csd-python-api, mayavi, wxpython, and several inverse-rendering and geometry packages.
-- Environment name: `crystalsizer3d`, stored in `~/.conda/envs`. The home directory is shared between Aire and Calder, so the same environment is visible on both. If it fails on Calder (still needs to check this), build a separate one (e.g. `crystalsizer3d_calder`).
+- Environment name: `crystalsizer3d`, stored in `~/.conda/envs`. The home directory is shared between Aire and Calder, so the same environment is visible on both and works fine on both.
 - Record exact versions (`pip freeze` / `conda env export`) once the baseline runs, and keep the environment fixed through the main experiments.
-- Check whether `timm` 1.0 loads the same pretrained RegNetZ weights as 0.9 (pretrained-weight tags changed between versions). Do this before trusting baseline numbers.
+- Check whether `timm` 1.0 loads the same pretrained RegNetZ weights as 0.9 (pretrained-weight tags changed between versions). 
 
 ---
 
@@ -110,7 +113,7 @@ Links in the home directory (home is shared; scratch is not):
 - Leeds HPC cluster; GPU nodes with NVIDIA L40S (3 per node), partition `gpu`, GRES `nvidia_l40`.
 - First test job (a matrix multiplication on a GPU node) ran successfully.
 
-### Calder (new, launched October 2026)
+### Calder
 - Hardware: 7 GPU nodes with 8 NVIDIA H200 NVL GPUs each (56 total); 96 CPU nodes (~128 cores each).
 - Slurm differences from Aire:
   - GPU partition `calder-gpu-hopper`; GPU request `--gres=gpu:nvidia_h200:<n>`.
@@ -123,22 +126,15 @@ Links in the home directory (home is shared; scratch is not):
   - Scratch `/scratch-calder/users/` and flash `/flash-calder/users/`: not shared with Aire, not backed up; quota 1 TB and 1.5 M files per Slurm project.
   - Scratch files are not auto-deleted; remove what is no longer needed.
 - CUDA: system module `cuda/13.3.0` exists, only under `calder/hopper`. It should not be needed, because PyTorch from conda brings its own CUDA 12.1 runtime. Works only if the driver supports it. Check with the first GPU job.
-
-### Calder GPU test job
-- Script: `calder_jobs/gpu_test.sh` (1 H200, 10 min limit; loads modules, activates `crystalsizer3d`, runs `nvidia-smi` and a one-line PyTorch CUDA check). Output goes to `~/job_logs_calder`.
-- Submitted as job 857380; queued with reason `Priority`; Slurm's estimated start was 13 Nov 2026, 20:14. Result pending.
+- GPU test job 857380 ran (13 Nov): NVIDIA H200 NVL (~140 GB), PyTorch 2.4.1, cuda.is_available() True.
+- Import test (calder_jobs/import_test.sh, job 861906): all main packages import; Mitsuba cuda_ad_rgb variant is available and can be set; crystalsizer3d, ...nn.models.timmnet and ...crystal_renderer import. Plain import mitsuba fails by design unless a variant is set first (the repo sets it). The script ended with Dr.Jit “jit_shutdown” leak messages and a segmentation fault after all checks had printed. Probably shutdown noise from Mitsuba.
+- Settings are read from environment variables in crystalsizer3d/__init__.py (DATA_PATH, N_WORKERS (default 8), USE_CUDA, USE_MLAB, LOG_LEVEL, ...), optionally via a .env file (.env.sample sets USE_CUDA=0, USE_MLAB=0, LOG_LEVEL=DEBUG). The repo is in a home folder shared by both clusters, so set DATA_PATH per job (as in import_test.sh) rather than in a shared .env. Use USE_MLAB=0 (no mayavi in the environment); USE_CUDA=1 makes the Mitsuba CUDA variant mandatory.
 
 ---
 
-## 7. Status and next steps
+## 7. Open issues
+- Missing taming package, which is imported by crystalsizer3d/nn/manager.py. scripts/train_synthetic.py imports Manager, so even predictor-only training fails with ModuleNotFoundError: No module named 'taming'.
 
-Done:
-- Fork and clones; environment built on Aire; data on both systems; Calder access, storage, links and software checked.
 
-Pending / next:
-1. Result of Calder GPU test job 857380 (environment and H200 check). 
-2. Check the `timm` 1.0 pretrained RegNetZ weights question.
-3. Map the repo: data loading, model, loss, training loop, evaluation. Find the config that gave the paper's RegNetZ result.
-4. Smoke test: a tiny training run (a few hundred images, 1-2 epochs) on the full chain; time a few hundred steps to estimate full training time. Keep the paper's batch size and settings at first.
-5. Full baseline training; evaluation against the manual measurements (E_d, E_v); tag the commit (`baseline-regnetz`).
-6. Then design and implement the FGN-style predictor.
+
+
