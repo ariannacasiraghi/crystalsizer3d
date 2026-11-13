@@ -16,9 +16,9 @@ from kornia.geometry import axis_angle_to_rotation_matrix, quaternion_to_rotatio
 from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 from omegaconf import OmegaConf
-from taming.models.lfqgan import VQModel
-from taming.modules.losses.vqperceptual import VQLPIPSWithDiscriminator
-from taming.util import get_ckpt_path
+#from taming.models.lfqgan import VQModel
+#from taming.modules.losses.vqperceptual import VQLPIPSWithDiscriminator
+#from taming.util import get_ckpt_path
 from timm.optim import create_optimizer_v2
 from timm.scheduler import create_scheduler_v2
 from timm.scheduler.scheduler import Scheduler
@@ -27,6 +27,23 @@ from torch.backends import cudnn
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+# Temporary workaround: taming is only needed for the denoiser/keypoint detector.
+# Remove this block and restore the three original imports once taming is installed.
+try:
+    from taming.models.lfqgan import VQModel
+    from taming.modules.losses.vqperceptual import VQLPIPSWithDiscriminator
+    from taming.util import get_ckpt_path
+except ImportError:
+    class VQModel:
+        pass
+    
+    class VQLPIPSWithDiscriminator:
+        pass
+    
+    def get_ckpt_path(*args, **kwargs):
+        raise ImportError('taming is not installed but is needed for the denoiser/keypoint detector.')
+    
+
 
 from crystalsizer3d import DATA_PATH, LOGS_PATH, START_TIMESTAMP, logger
 from crystalsizer3d.args.dataset_training_args import DatasetTrainingArgs
