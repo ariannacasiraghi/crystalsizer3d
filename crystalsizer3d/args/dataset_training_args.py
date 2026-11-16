@@ -8,9 +8,9 @@ from crystalsizer3d.util.utils import str2bool
 
 
 class DatasetTrainingArgs(BaseArgs):
-    def __init__(
+    def __init__( #AC List of settings it accepts, each with a type and a default value
             self,
-            dataset_path: Union[str, Path],
+            dataset_path: Union[str, Path], #AC This is the only setting with no default, so it is required 
             check_image_paths: bool = False,
             train_test_split: float = 0.8,
             use_clean_images: bool = False,
@@ -46,12 +46,12 @@ class DatasetTrainingArgs(BaseArgs):
             add_coord_grid: bool = False,
             check_symmetries: int = 0,
             use_canonical_rotations: bool = False,
-            **kwargs
+            **kwargs #AC Accept any extras, collect them into a dict, and ignore them
     ):
-        if isinstance(dataset_path, str):
+        if isinstance(dataset_path, str): #AC If dataset arrives as text, convert it to a Path object
             dataset_path = Path(dataset_path)
         # assert dataset_path.exists(), f'Dataset path does not exist: {dataset_path}'
-        self.dataset_path = dataset_path
+        self.dataset_path = dataset_path #AC Store each value that arrives into the object itself
         self.check_image_paths = check_image_paths
         self.train_test_split = train_test_split
         self.use_clean_images = use_clean_images
@@ -75,8 +75,8 @@ class DatasetTrainingArgs(BaseArgs):
         self.train_light = train_light
         self.train_predictor = train_predictor
         self.train_generator = train_generator
-        if train_combined:
-            assert train_predictor and train_generator, \
+        if train_combined: 
+            assert train_predictor and train_generator, \ #AC Assert stops the program with a message if the condition is False
                 'train_predictor and train_generator must be True when train_combined is True.'
         self.train_combined = train_combined
         self.train_denoiser = train_denoiser
@@ -84,7 +84,7 @@ class DatasetTrainingArgs(BaseArgs):
         self.train_edge_detector = train_edge_detector
 
         # Rotation mode
-        assert rotation_mode in ROTATION_MODES, f'Invalid rotation mode {rotation_mode}, must be one of {ROTATION_MODES}'
+        assert rotation_mode in ROTATION_MODES, f'Invalid rotation mode {rotation_mode}, must be one of {ROTATION_MODES}' #AC Check that rotation mode is valid
         self.rotation_mode = rotation_mode
 
         # Keypoint parameters
@@ -92,25 +92,26 @@ class DatasetTrainingArgs(BaseArgs):
         self.wireframe_blur_variance = wireframe_blur_variance
 
         # Old arguments, now not recommended
-        assert not use_distance_switches, 'Distance switches are now disabled.'
+        assert not use_distance_switches, 'Distance switches are now disabled.' #AC Forbid the old distance_switches option
         self.use_distance_switches = use_distance_switches
         self.add_coord_grid = add_coord_grid
         self.check_symmetries = check_symmetries
         self.use_canonical_rotations = use_canonical_rotations
 
-    @classmethod
-    def add_args(cls, parser: ArgumentParser) -> _ArgumentGroup:
+    @classmethod #AC This means I can call this method without instantiating an object of this class. Ordinary methods need first an object to be instantiated
+    def add_args(cls, parser: ArgumentParser) -> _ArgumentGroup: #AC Take a parameter named parser of type ArgumentParser and return group of type _ArgumentGroup
         """
         Add arguments to a command parser.
         """
-        group = parser.add_argument_group('Dataset Args')
+        group = parser.add_argument_group('Dataset Args') #AC Create a group in the parser and register one option per setting
+
         group.add_argument('--dataset-path', type=Path,
                            help='Path to the dataset.')
         group.add_argument('--check-image-paths', type=str2bool, default=False,
                            help='Check that the image paths exist for all images in dataset (slow for large datasets).')
-        group.add_argument('--train-test-split', type=float, default=0.8,
+        group.add_argument('--train-test-split', type=float, default=0.8, #AC Option name, type the text is converted to, default value, and help
                            help='Train/test split.')
-        group.add_argument('--use-clean-images', type=str2bool, default=False,
+        group.add_argument('--use-clean-images', type=str2bool, default=False, #AC type=str2bool options are true/false switches
                            help='Use clean images (no bubbles or defects).')
 
         # Augmentation
@@ -129,7 +130,7 @@ class DatasetTrainingArgs(BaseArgs):
         group.add_argument('--augment-noise-max-sigma', type=float, default=0.1,
                            help='Maximum sigma for Gaussian noise during augmentation.')
 
-        # Training flags
+        # Training flags #AC Which parameters/networks to train
         group.add_argument('--train-zingg', type=str2bool, default=True,
                            help='Train Zingg ratios.')
         group.add_argument('--train-distances', type=str2bool, default=True,

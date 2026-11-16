@@ -39,11 +39,14 @@ class NetworkArgs(BaseArgs):
         #                                        help='What type of network to use as the base.')
         #     subparsers.required = True
         # else:
-        subparsers = parser.add_subparsers(title='Base network', dest=f'{prefix.replace("-", "_")}base_net',
-                                           help='What type of network to use as the base.')
-        subparsers.required = True
-        NetworkArgs._add_fcnet_args(subparsers.add_parser('fcnet'), prefix)
-        NetworkArgs._add_resnet_args(subparsers.add_parser('resnet'), prefix)
+        subparsers = parser.add_subparsers(title='Base network', dest=f'{prefix.replace("-", "_")}base_net', #AC The network type is a subcommand, not an option
+                                           help='What type of network to use as the base.')  #AC argparse 'subparsers' let the command line contain a word like 
+        #AC timm that selects a whole set of further options
+        #AC Example command line: python train_synthetic.py <general options> timm --model-name <name> ...
+        #AC Everything after the word timm is read by the timm subparser only. The general options must come before it
+        subparsers.required = True                                                        
+        NetworkArgs._add_fcnet_args(subparsers.add_parser('fcnet'), prefix) 
+        NetworkArgs._add_resnet_args(subparsers.add_parser('resnet'), prefix) 
         NetworkArgs._add_densenet_args(subparsers.add_parser('densenet'), prefix)
         NetworkArgs._add_pyramidnet_args(subparsers.add_parser('pyramidnet'), prefix)
         NetworkArgs._add_vitnet_args(subparsers.add_parser('vitnet'), prefix)
@@ -51,7 +54,7 @@ class NetworkArgs(BaseArgs):
 
         return group
 
-    @staticmethod
+    @staticmethod #AC Just an ordinary function placed inside a class for tidiness
     def _add_fcnet_args(parser: Namespace, prefix: str = None):
         """
         Fully-connected network parameters.
@@ -124,8 +127,8 @@ class NetworkArgs(BaseArgs):
                             help='Name of the model to use.')
         parser.add_argument(f'--{prefix}use-cls-token', type=str2bool, default=True,
                             help='Whether to use the CLS token only or the full image embedding.')
-        parser.add_argument(f'--{prefix}classifier-hidden-layers', type=lambda s: [int(item) for item in s.split(',')],
-                            default=[],
+        parser.add_argument(f'--{prefix}classifier-hidden-layers', type=lambda s: [int(item) for item in s.split(',')], #AC default is [] 
+                            default=[], #AC With no hidden layers, the classifier head is just one linear (fully connected) layer from the network’s features to the outputs  
                             help='Comma delimited list of hidden layer sizes to use in the classifier.')
         parser.add_argument(f'--{prefix}vit-dropout-prob', type=float, default=0.,
                             help='Dropout probability to use in the transformer layers.')
@@ -211,6 +214,9 @@ class NetworkArgs(BaseArgs):
 
         return hyperparameters
 
+#AC NetworkArgs needs its own from_args (while DatasetTrainingArgs and OptimiserArgs used BaseArgs.from_args) because of the presence of the subparser
+#AC This from_args therefore overrides the one in BaseArgs.
+
     @classmethod
     def from_args(cls, args: Union[Namespace, dict]) -> 'NetworkArgs':
         """
@@ -221,7 +227,7 @@ class NetworkArgs(BaseArgs):
         if hasattr(args, 'hyperparameters'):
             hyperparameters = args.hyperparameters
         else:
-            hyperparameters = NetworkArgs.extract_hyperparameter_args(args)
+            hyperparameters = NetworkArgs.extract_hyperparameter_args(args) #AC Collects the options of the chosen sub-command into a dict (hyperparameters)
         return NetworkArgs(
             base_net=args.base_net,
             hyperparameters=hyperparameters,

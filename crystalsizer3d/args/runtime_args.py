@@ -73,7 +73,7 @@ class RuntimeArgs(BaseArgs):
                            help='Abort if the checkpoint can\'t be loaded. Default=False.')
         group.add_argument('--seed', type=int, default=None,
                            help='Random seed to use for reproducibility. Omit to not set a seed.')
-        parser.add_argument('--use-gpu', type=str2bool, default=USE_CUDA,
+        parser.add_argument('--use-gpu', type=str2bool, default=USE_CUDA, #AC If USE_CUDA isn’t set to 1 in a job script, the run would start on the CPU
                             help='Use GPU. Defaults to environment setting.')
         group.add_argument('--n-dataloader-workers', type=int, default=4,
                            help='Number of dataloader worker processes.')

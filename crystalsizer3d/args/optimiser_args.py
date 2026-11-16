@@ -41,7 +41,7 @@ class OptimiserArgs(BaseArgs):
             accumulate_grad_batches: int = 1,
             weight_decay: float = 1e-5,
             clip_grad_norm: float = -1,
-            freeze_pretrained: bool = False,
+            freeze_pretrained: bool = False, #AC The weights are not frozen during training; so, the whole network is trained and not just the final fcl
             gan_loss: str = 'hinge',
             disc_loss_threshold: float = 0.1,
 
@@ -78,7 +78,8 @@ class OptimiserArgs(BaseArgs):
 
             **kwargs
     ):
-        # Optimisation algorithm
+        # Optimisation algorithm #AC this is a throwaway optimiser with a learning-rate scheduler on a dummy parameter 
+        #AC just to check that the names --algorithm, --lr-scheduler are supported 
         p = nn.Parameter(torch.tensor(0.))
         opt = create_optimizer_v2(model_or_params=[p], opt=algorithm)  # check it is supported
         self.algorithm = algorithm
