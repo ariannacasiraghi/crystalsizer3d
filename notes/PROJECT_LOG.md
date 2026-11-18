@@ -12,7 +12,7 @@ Conventions: `<user>` stands for my University username.
 Modify the CrystalSizer3D pipeline (Ilett et al., PNAS Nexus 2026, 5(4)) by replacing its deterministic predictor (RegNetZ) with a probabilistic predictor that outputs a distribution of plausible crystal configurations for a given image, instead of one configuration.
 
 - Samples from the distribution would initialise the existing refinement step (denoiser + keypoint detector, both MAGVITv2-based), which is kept unchanged at first. Refinement may turn out not to be needed if the predictor is sufficiently good.
-- The mechanism used in the probabilistic predicor comes from Google's FGN paper (Skillful joint probabilistic weather forecasting from marginals, WeatherNext 2). Only the mechanism is used, not the architecture or weights.
+- The mechanism used in the probabilistic predictor comes from Google's FGN paper (Skillful joint probabilistic weather forecasting from marginals, WeatherNext 2). Only the mechanism is used, not the architecture or weights.
 
 ### Planned design 
 
