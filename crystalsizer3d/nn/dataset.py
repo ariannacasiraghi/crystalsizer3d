@@ -87,14 +87,14 @@ class Dataset:
         self.csd_proxy = CSDProxy()
 
         # Load the data
-        self._load_data()
+        self._load_data() #AC Reads the files
 
         # Load dataset statistics
-        self._load_ds_stats()
+        self._load_ds_stats() #AC Reads ds_stats.yml, the per-parameter mean, variance, min, and max
 
         # Split dataset into train and test
         self.train_test_split_target = self.dst_args.train_test_split
-        self._split_dataset()
+        self._split_dataset() #AC Reads the train and test indices
 
         # Set stats
         self.size_all = len(self.data)
@@ -103,7 +103,7 @@ class Dataset:
         self.image_size = self.dataset_args.image_size
 
         # Set labels (and output vector size)
-        labels = []
+        labels = [] #AC Builds this list (names of the target scalars). So, len(labels) should be 31, but could be more if some of the train_* flags are set to true
         if self.dst_args.train_zingg:
             labels += self.labels_zingg
         if self.dst_args.train_distances:
@@ -124,7 +124,7 @@ class Dataset:
         if self.dst_args.train_light:
             labels += self.labels_light
 
-        # If any of the labels have 0 variance in the dataset then remove them
+        # If any of the labels have 0 variance in the dataset then remove them #AC Because there is nothing to learn from these labels.
         fixed_parameters = {}
         for k in labels:
             if k[:2] == 'ds':
@@ -139,7 +139,7 @@ class Dataset:
             labels.remove(k)
 
         self.labels = labels
-        self.label_size = len(labels)
+        self.label_size = len(labels) #AC This is the predictor’s output size, which it gets through parameters_shape in manager.py
         self.fixed_parameters = fixed_parameters
         self.labels_distances_active = [k for k in self.labels_distances if k in self.labels]
         self.labels_distance_switches_active = [k for k in self.labels_distance_switches if k in self.labels]
@@ -163,13 +163,13 @@ class Dataset:
         logger.info(f'Loading dataset from {self.path}')
 
         # Load arguments
-        with open(self.path / 'options.yml', 'r') as f:
+        with open(self.path / 'options.yml', 'r') as f: #AC Reads options.yml, which describes how the dataset was generated
             args = yaml.load(f, Loader=yaml.FullLoader)
             self.created = args['created']
             self.dataset_args = DatasetSyntheticArgs.from_args(args['dataset_args'])
 
         # Load rendering parameters (but don't fail if they don't exist)
-        r_params_file = self.path / 'rendering_parameters.json'
+        r_params_file = self.path / 'rendering_parameters.json' #AC Reads rendering_parameters.json with orjson and turns the keys into ints
         if r_params_file.exists():
             with open(r_params_file, 'rb') as f:
                 rendering_parameters = orjson.loads(f.read())
@@ -179,7 +179,7 @@ class Dataset:
             rendering_parameters = None
 
         # Load crystal vertices
-        vertices_file = self.path / 'vertices.json'
+        vertices_file = self.path / 'vertices.json' #AC Reads vertices.json with orjson and turns the keys into ints
         if vertices_file.exists():
             with open(vertices_file, 'rb') as f:
                 vertices = orjson.loads(f.read())
@@ -189,7 +189,8 @@ class Dataset:
             vertices = None
 
         # Load data
-        with open(self.path / 'parameters.csv', 'r') as f:
+        with open(self.path / 'parameters.csv', 'r') as f: #AC Loops over the rows of parameters.csv. For each row, it builds a dict item
+                                                        #AC that holds idx, img path, d distances, a face areas, si/il, rendering_parameters, and vertices
             reader = csv.DictReader(f)
             self.headers = reader.fieldnames
             self.labels_distances = [h for h in self.headers if h[0] == 'd']
@@ -212,7 +213,7 @@ class Dataset:
                     elif header == 'crystal_id':
                         item[header] = row[header]
                     elif header == 'image':
-                        image_path = self.path / 'images' / row['image']
+                        image_path = self.path / 'images' / row['image'] #AC Note that this is the img path and not the image itself. The path (and not the image) is stored for efficiency
                         if self.dst_args.check_image_paths:
                             assert image_path.exists(), f'Image path does not exist: {image_path}'
                         item['image'] = image_path
@@ -334,12 +335,13 @@ class Dataset:
         len_ds = len(self.data)
 
         # First check if the split is already available here
-        tt_split_path = self.path / f'train_test_split_{self.train_test_split_target:.2f}.json'
+        tt_split_path = self.path / f'train_test_split_{self.train_test_split_target:.2f}.json' #AC Builds the file name from --train-test-split formatted to two decimals
+                                                                                                #AC So, 0.8 becomes train_test_split_0.80.json
         if tt_split_path.exists():
             logger.info(f'Loading train/test splits from {tt_split_path}')
             with open(tt_split_path, 'rb') as f:
                 tt_split = orjson.loads(f.read())
-            self.train_test_split_actual = tt_split['train_test_split_actual']
+            self.train_test_split_actual = tt_split['train_test_split_actual'] #AC Gets the necessary info from the existing file
             self.train_idxs = np.array(tt_split['train_idxs'])
             self.test_idxs = np.array(tt_split['test_idxs'])
             return
@@ -375,7 +377,7 @@ class Dataset:
         else:
             return self.size_all
 
-    def load_item(self, idx: int) -> Tuple[dict, Image.Image, Optional[Image.Image], Dict[str, np.ndarray]]:
+    def load_item(self, idx: int) -> Tuple[dict, Image.Image, Optional[Image.Image], Dict[str, np.ndarray]]: #AC This is where the images are actually opened.
         """
         Get an item from the dataset.
         """
@@ -703,7 +705,7 @@ class Dataset:
         )
 
 
-class DatasetProxy:
+class DatasetProxy: #AC Wrapper around the real Dataset
     ds_cache: Dict[str, Any] = {}
     ds: Optional[Dataset]
 
@@ -714,19 +716,19 @@ class DatasetProxy:
         self.dst_args = dst_args
         self.path = dst_args.dataset_path
         self.cache_path = DATASET_PROXY_PATH / f'{dst_args.hash()}.json'
-        if not self._load_cache():
+        if not self._load_cache(): #AC Tries to load the cache. If cache exists, the slow load of the 100k rows is skipped
             self._load_dataset()
 
     def __getattr__(self, name):
         # Return attributes from the cache
-        if name in self.ds_cache:
+        if name in self.ds_cache: #AC First looks in the cache
             if name == 'dataset_args' and not isinstance(self.ds_cache[name], DatasetSyntheticArgs):
                 self.ds_cache[name] = DatasetSyntheticArgs.from_args(self.ds_cache[name])
             return self.ds_cache[name]
 
         # Load dataset
         if name == 'ds':
-            self._load_dataset()
+            self._load_dataset() #AC If the name is not in the cache, then load the real Dataset
             return self.ds
 
         # Return attributes from the dataset

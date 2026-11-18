@@ -43,10 +43,10 @@ class DatasetLoader(DatasetTorch, ABC):
     ):
         assert train_or_test in ['train', 'test']
         self.ds = ds
-        self.idxs = list(getattr(ds, train_or_test + '_idxs'))
+        self.idxs = list(getattr(ds, train_or_test + '_idxs')) #AC A list of dataset indices for the split
         self.train_or_test = train_or_test
         self.dst_args = dst_args
-        if train_or_test == 'train' and self.dst_args.augment:
+        if train_or_test == 'train' and self.dst_args.augment: #AC The augmentation transforms are built only for the train loader
             self.image_transforms = self._init_image_transforms()
         else:
             self.image_transforms = None
@@ -72,9 +72,9 @@ class DatasetLoader(DatasetTorch, ABC):
         ])
 
     def __getitem__(self, index: int) -> DataBatch:
-        ds_idx = self.idxs[index]
-        item, image, image_clean, params = self.ds.load_item(ds_idx)
-        image = to_tensor(image)
+        ds_idx = self.idxs[index] #AC Takes a position in the list, index, and maps it to a dataset index ds_idx
+        item, image, image_clean, params = self.ds.load_item(ds_idx) #AC Calls load_item
+        image = to_tensor(image) #AC Converts the PIL image to a tensor with to_tensor, which gives values in [0,1] 
         image_clean_aug = None
         if image_clean is not None:
             image_clean = to_tensor(image_clean)
@@ -83,7 +83,7 @@ class DatasetLoader(DatasetTorch, ABC):
             for k, v in params.items()
         }
 
-        if self.image_transforms is not None:
+        if self.image_transforms is not None: #AC Apply the augmentation if there is one
             image_aug = self.image_transforms(image)
             if image_clean is not None:
                 image_clean_aug = self.image_transforms(image_clean)
@@ -92,10 +92,10 @@ class DatasetLoader(DatasetTorch, ABC):
             if image_clean is not None:
                 image_clean_aug = image_clean.clone()
 
-        return item, image, image_aug, image_clean, image_clean_aug, params
+        return item, image, image_aug, image_clean, image_clean_aug, params  #AC Each sample is a tuple of these 6 fields. 32 samples in a batch.
 
     def __len__(self) -> int:
-        return self.ds.get_size(self.train_or_test)
+        return self.ds.get_size(self.train_or_test) #AC i.e., size_train or size_test
 
 
 def get_data_loader(
@@ -111,7 +111,8 @@ def get_data_loader(
     """
     assert train_or_test in ['train', 'test']
 
-    def collate_fn(batch):
+    def collate_fn(batch): #AC Regroups the 32 samples by field (see above), except sym_rotations and vertices, which stay as lists.
+                            #AC For each field, stacks the 32 values into one tensor with a new first dimension of size 32
         transposed = list(zip(*batch))
 
         def collate_targets(targets):
@@ -134,19 +135,19 @@ def get_data_loader(
 
         return ret
 
-    dataset_loader = DatasetLoader(
+    dataset_loader = DatasetLoader( #AC Class defined in this file
         ds=ds,
         dst_args=dst_args,
         train_or_test=train_or_test,
     )
 
-    loader = torch.utils.data.DataLoader(
+    loader = torch.utils.data.DataLoader( #AC Create the PyTorch DataLoader with shuffle=True (for both train and test)
         dataset_loader,
         batch_size=batch_size,
         shuffle=True,
         num_workers=n_workers,
         drop_last=True,
-        collate_fn=collate_fn,
+        collate_fn=collate_fn, #AC Discard incomplete final batch
         prefetch_factor=prefetch_factor if n_workers > 0 else None
     )
 

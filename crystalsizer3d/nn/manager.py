@@ -27,8 +27,8 @@ from torch.backends import cudnn
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-# Temporary workaround: taming is only needed for the denoiser/keypoint detector.
-# Remove this block and restore the three original imports once taming is installed.
+#AC Temporary workaround: taming is only needed for the denoiser/keypoint detector.
+#AC Remove this block and restore the three original imports once taming is installed.
 try:
     from taming.models.lfqgan import VQModel
     from taming.modules.losses.vqperceptual import VQLPIPSWithDiscriminator
@@ -152,7 +152,8 @@ class Manager:
         self.checkpoint = self._init_checkpoint(save_dir=save_dir)
 
     @property
-    def image_shape(self) -> Tuple[int, ...]:
+    def image_shape(self) -> Tuple[int, ...]: #AC image_shape and parameters_shape (below) are read from self.ds
+                                            #AC The network’s output size is therefore decided by the dataset, not by the network code.
         n_channels = 5 if self.dataset_args.add_coord_grid else 3
         return n_channels, self.ds.image_size, self.ds.image_size
 
@@ -164,7 +165,8 @@ class Manager:
     def logs_path(self) -> Path:
         return self.checkpoint.save_dir / self.checkpoint.id
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str): #AC This is how manager gets the dataset. Lazy because self.ds is not assigned in __init__
+                                    #AC Since Python cannot find self.ds, it calls __getattr__ that builds DatasetProxy(self.dataset_args) and stores it
         """
         Lazy loading of the components.
         """
