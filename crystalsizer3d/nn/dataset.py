@@ -341,7 +341,7 @@ class Dataset:
             logger.info(f'Loading train/test splits from {tt_split_path}')
             with open(tt_split_path, 'rb') as f:
                 tt_split = orjson.loads(f.read())
-            self.train_test_split_actual = tt_split['train_test_split_actual'] #AC Gets the necessary info from the existing file
+            self.train_test_split_actual = tt_split['train_test_split_actual'] #AC Read three keys from the existing split
             self.train_idxs = np.array(tt_split['train_idxs'])
             self.test_idxs = np.array(tt_split['test_idxs'])
             return
@@ -349,14 +349,14 @@ class Dataset:
         # Otherwise, split the dataset
         logger.info('Splitting dataset into train/test sets.')
         idxs = np.arange(len_ds)
-        np.random.shuffle(idxs)
+        np.random.shuffle(idxs) # AC Random shuffle of the indices
         split_idx = int(len_ds * self.train_test_split_target)
         self.train_idxs = idxs[:split_idx]
         self.test_idxs = idxs[split_idx:]
         self.train_test_split_actual = len(self.train_idxs) / len_ds
 
         # Save the split
-        logger.info(f'Saving train/test splits to {tt_split_path}')
+        logger.info(f'Saving train/test splits to {tt_split_path}') #AC Write four keys when it creates the split
         tt_split = {
             'train_test_split_target': self.train_test_split_target,
             'train_test_split_actual': self.train_test_split_actual,
