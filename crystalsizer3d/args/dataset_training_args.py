@@ -76,7 +76,8 @@ class DatasetTrainingArgs(BaseArgs):
         self.train_predictor = train_predictor
         self.train_generator = train_generator
         if train_combined: 
-            assert train_predictor and train_generator, \ #AC Assert stops the program with a message if the condition is False
+            #AC Assert stops the program with a message if the condition is False
+            assert train_predictor and train_generator, \
                 'train_predictor and train_generator must be True when train_combined is True.'
         self.train_combined = train_combined
         self.train_denoiser = train_denoiser
