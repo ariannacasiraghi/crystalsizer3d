@@ -11,7 +11,11 @@ from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
-from mayavi import mlab
+try:
+    from mayavi import mlab
+    mlab.options.offscreen = True  #AC Off-screen rendering, moved inside the try because mayavi might be missing
+except ImportError:  #AC mayavi is not installed in the HPC environment; it is only used when USE_MLAB=1
+    mlab = None
 from torch import Tensor
 
 from crystalsizer3d import USE_MLAB
@@ -24,7 +28,7 @@ if TYPE_CHECKING:
     from crystalsizer3d.nn.manager import Manager
 
 # Off-screen rendering
-mlab.options.offscreen = True
+# mlab.options.offscreen = True  #AC Commented out: now set inside the try block where mayavi is imported
 
 
 def _load_single_parameter(
