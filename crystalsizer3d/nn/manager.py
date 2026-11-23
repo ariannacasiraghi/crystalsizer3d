@@ -2039,7 +2039,7 @@ class Manager:
 
         return kp_heatmap, wireframe
 
-    def calculate_predictor_losses(
+    def calculate_predictor_losses( #AC Here is where the calculation of the composite loss starts. 
             self,
             Y_pred: Dict[str, Tensor],
             Y_target: Dict[str, Union[Tensor, List[Tensor]]],
@@ -2178,7 +2178,7 @@ class Manager:
 
         return loss, stats
 
-    def _calculate_transformation_losses(
+    def _calculate_transformation_losses( #AC Covers the paper's L_P and L_R, which are added together as L_p in Table S5
             self,
             t_pred: Tensor,
             t_target: Tensor,

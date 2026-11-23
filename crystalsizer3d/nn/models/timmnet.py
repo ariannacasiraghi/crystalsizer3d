@@ -36,13 +36,13 @@ class TimmNet(BaseNet):
         model_args = dict(
             model_name=self.model_name,
             pretrained=True,
-            num_classes=0,
+            num_classes=0, #AC Tells Timm to drop its own final layer, so the backbone returns a pooled feature vector of size num_features
             drop_rate=self.dropout_prob,
             drop_path_rate=self.droppath_prob,
             img_size=input_shape[-1] if not self.resize_input else None,
         )
         try:
-            self.model = timm.create_model(**model_args)
+            self.model = timm.create_model(**model_args) #AC Builds the ImageNet-pretrained backbone with its original classifier removed
         except TypeError:
             del model_args['img_size']
             self.model = timm.create_model(**model_args)
@@ -64,15 +64,15 @@ class TimmNet(BaseNet):
     def get_n_classifier_params(self) -> int:
         return sum([p.data.nelement() for p in self.classifier.parameters()])
 
-    def _build_model(self):
+    def _build_model(self): #AC Build the head (i.e., the paper single fcl)
         if 'mobilenet' in self.model_name:
             in_size = self.model.head_hidden_size
         else:
             in_size = self.model.num_features
-        out_size = int(torch.prod(torch.tensor(self.output_shape)))
+        out_size = int(torch.prod(torch.tensor(self.output_shape))) #AC out_size comes from output_shape, which is label_size (via parameters_shape in _init_predictor in manager.py)
 
         # Build classifier
-        self.classifier = nn.Sequential()
+        self.classifier = nn.Sequential() #AC The new head is self.classifier. With no hidden layers, it is just nn.Linear(num_features, out_size), with no activation
         size = in_size
         for i, n in enumerate(self.classifier_hidden_layers):
             if self.classifier_dropout_prob > 0:
@@ -121,7 +121,7 @@ class TimmNet(BaseNet):
                 else:
                     raise e
 
-    def _init_params(self):
+    def _init_params(self): #AC The weights of the fcl get Xavier initialization and bias 0
         for m in self.classifier.modules():
             if isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm1d):
                 m.reset_parameters()
@@ -129,23 +129,23 @@ class TimmNet(BaseNet):
                 nn.init.xavier_uniform_(m.weight)
                 nn.init.constant_(m.bias, 0)
 
-    def forward(self, x):
+    def forward(self, x): #AC Forward pass
         bs = x.shape[0]
 
-        # Expand grayscale to RGB
+        # Expand grayscale to RGB #AC Image converted to 3 channels
         if x.shape[1] == 1:
             x = x.expand(-1, 3, -1, -1)
 
-        # Resize to required input shape
+        # Resize to required input shape #AC Image resized to match the network backbone's required size 
         if self.resize_input and x.shape[-1] != self.data_config['input_size'][-1]:
             x = F.interpolate(x, size=self.data_config['input_size'][-2:], mode='bilinear', align_corners=False)
         elif self.reshape_dim:
             x = F.interpolate(x, size=(self.reshape_dim, self.reshape_dim), mode='bilinear', align_corners=False)
 
-        # Normalise
+        # Normalise #AC Image normalized with the pretrained mean and std
         x = (x - self.img_mean) / self.img_std
 
-        # Get the image embedding
+        # Get the image embedding #AC Image goes through forward_features, forward_head (pooling only), and classifier 
         x = self.model.forward_features(x)
         x = self.model.forward_head(x, pre_logits=True)
 
