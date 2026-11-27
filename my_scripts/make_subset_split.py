@@ -53,6 +53,9 @@ assert args.output_dir.resolve() != args.original_split.resolve().parent, 'Outpu
 # Output path
 tt_split_path = args.output_dir / 'train_test_split_0.80.json'
 
+# Create the directory if it doesn't exist
+args.output_dir.mkdir(parents=True, exist_ok=True)
+
 # Write the file
 with open(tt_split_path, 'x') as f: # x as an additional safety to prevent overwrite
     json.dump(tt_split, f, indent=4)
